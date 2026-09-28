@@ -1,5 +1,44 @@
 # Lessons
 
+## 2026-09-28 — CP3.2: isolating RNG streams fixed the whack-a-mole calibration problem
+
+CP3.1's lesson correctly diagnosed that changing an RNG call's *shape*
+reshuffles everything downstream, but the fix applied there (just being
+aware of it) still meant every capacity-calibration tweak cost a full
+regenerate-and-remeasure cycle, and fixing one process's overload routinely
+broke another's numbers that had nothing to do with it. The actual fix was
+architectural, not procedural: give work-centre generation (shift pattern,
+`cost_per_hour` jitter) its own independent RNG stream
+(`np.random.SeedSequence(seed).spawn(2)`, not `default_rng(seed)` /
+`default_rng(seed + K)` — spawning guarantees independence, offsetting a
+seed does not), so calibration changes in `master_data.py` can no longer
+touch demand/BOM/routing generation at all. One remaining trap found the
+hard way: draw the shift pattern **once per process**, not once per work-
+centre *instance* — round-robin work assignment already balances load
+evenly across parallel lines, but independently re-randomizing each
+instance's shift count was undoing that balance by giving "identical" lines
+very different capacity for the same work.
+
+Second finding: even with fully isolated RNG and round-robin assignment,
+some genuine per-instance variance remains when few (2-3) parallel lines
+split ~30-50 independently-random-demand items — this is real sampling
+variance (small-N bin-packing luck), not a bug, and increasing the instance
+count (more bins) is the correct lever, but pushed too far in one attempt
+(a "safe-looking" capacity bump) it flipped the failure mode entirely
+(baseline became so over-provisioned that a demand shock could no longer
+push anything into a constraint) — calibration has two failure directions,
+not one, and both need checking after any change, not just "did the number
+I was fixing get better."
+
+**How to apply going forward**: when a synthetic generator has multiple
+independent "domains" (demand, capacity, cost, geometry, ...) that get
+calibrated separately, give each domain its own spawned RNG stream from the
+start, before any calibration work begins — retrofitting it mid-calibration
+still requires one "transition" regenerate-and-remeasure cycle, but every
+change after that is isolated and fast. Always remeasure the FULL picture
+(not just the one number being tuned) after every calibration change, in
+both directions (still too tight? now too loose?).
+
 ## 2026-09-28 — CP3.1 calibration process (user rejected "mechanically correct but not demo-credible")
 
 The user accepted CP3's engine mechanics outright but rejected the checkpoint

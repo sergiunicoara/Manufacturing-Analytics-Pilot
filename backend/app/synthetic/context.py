@@ -36,12 +36,26 @@ class IdSequence:
 class GenContext:
     seed: int
     rng: np.random.Generator = field(init=False)
+    capacity_rng: np.random.Generator = field(init=False)
     faker: Faker = field(init=False)
     tables: dict[str, pd.DataFrame] = field(default_factory=dict)
     ids: dict[str, IdSequence] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        self.rng = np.random.default_rng(self.seed)
+        # [CP3.2] Two independent (but both seed-deterministic) streams via
+        # SeedSequence.spawn, not two default_rng(seed) / default_rng(seed+K)
+        # calls -- spawning guarantees statistically independent streams
+        # regardless of seed value, whereas offsetting a seed by a constant
+        # does not. `capacity_rng` drives ONLY work-centre shift-pattern
+        # calibration (master_data.py) so that tuning shift weights or
+        # multiplicities never reshuffles demand/BOM/routing generation (and
+        # vice versa) -- calibration iteration was previously very slow
+        # because every change to shared `rng` consumption reshuffled the
+        # entire rest of the dataset (see tasks/lessons.md).
+        seed_seq = np.random.SeedSequence(self.seed)
+        main_seed, capacity_seed = seed_seq.spawn(2)
+        self.rng = np.random.default_rng(main_seed)
+        self.capacity_rng = np.random.default_rng(capacity_seed)
         self.faker = Faker()
         Faker.seed(self.seed)
 

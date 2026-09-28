@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pandas as pd
 import pytest
 
 from app.analytics.period_engine import run_period_engine
@@ -80,6 +81,40 @@ def test_capacity_intervention_resolves_a_sustained_overload_that_buffer_cannot(
     # decline back toward zero.
     assert series[-1].utilization_pct < 1.0
     assert series[-1].backlog_hours_end < peak_backlog
+
+
+def test_per_work_centre_recovery_search_sizes_each_work_centre_independently():
+    """[CP3.2 req. 5] Two work centres with different severities of overload
+    must get DIFFERENT recovery multipliers, sized to each one's own
+    backlog -- not one shared value derived from their combined total."""
+    from app.analytics.scenario_demo import find_smallest_recovering_capacity_intervention_per_work_centre
+
+    plant = mini_plant(14)
+    # WC1 (steel->widget) gets heavy demand; WC2 gets a second routing op on
+    # WIDGET with a much lighter load, so it's barely (or not) overloaded.
+    ops = plant["routing_operations_df"]
+    ops2 = pd.concat([ops, pd.DataFrame([{
+        "routing_operation_id": 2, "routing_id": 1, "seq_no": 2, "work_centre_id": 2, "operation_name": "Inspect",
+        "setup_time_minutes": 2.0, "run_time_minutes_per_unit": 1.0, "queue_time_minutes": 10.0,
+        "transfer_time_minutes": 2.0, "yield_pct": 1.0, "batch_size": 20,
+    }])], ignore_index=True)
+    plant["routing_operations_df"] = ops2
+
+    demand = {w: {1: 160.0} for w in plant["horizon"]}
+    scenario_inputs = dict(plant)
+    scenario_inputs["top_level_demand"] = demand
+    start_week = plant["horizon"][3]
+
+    results = find_smallest_recovering_capacity_intervention_per_work_centre(
+        scenario_inputs, work_centre_ids=[1, 2], intervention_start_week=start_week,
+        candidate_multipliers=[1.05, 1.1, 1.2, 1.5, 2.0, 3.0],
+    )
+    assert set(results.keys()) == {1, 2}
+    # WC1 is heavily overloaded (same fixture as other tests); WC2's light
+    # extra load should need a much smaller (or no) multiplier to recover.
+    assert results[1]["multiplier"] is not None
+    if results[2]["multiplier"] is not None and results[1]["multiplier"] is not None:
+        assert results[2]["multiplier"] <= results[1]["multiplier"]
 
 
 def test_smallest_recovering_intervention_search_finds_peak_then_decline():

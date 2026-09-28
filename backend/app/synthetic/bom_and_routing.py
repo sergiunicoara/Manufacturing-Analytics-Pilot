@@ -77,7 +77,7 @@ PROCESS_TIME_DEFAULTS = {
     # comment) -- a deliberate per-process time/batch assumption, not a
     # capacity-side special case, and still just one input the constraint
     # classifier has to discover on its own merits every run.
-    "WELDING": {"setup": (30, 60), "run": (16.0, 24.0), "batch": (2, 5)},
+    "WELDING": {"setup": (40, 70), "run": (26.0, 38.0), "batch": (2, 4)},
     "GRINDING": {"setup": (10, 20), "run": (0.5, 1.5), "batch": (5, 20)},
     "POWDER_COATING": {"setup": (30, 50), "run": (2.0, 4.0), "batch": (20, 50)},
     "PAINTING": {"setup": (25, 45), "run": (2.5, 5.0), "batch": (10, 30)},

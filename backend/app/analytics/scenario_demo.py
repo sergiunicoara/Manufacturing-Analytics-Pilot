@@ -146,12 +146,15 @@ def find_smallest_recovering_capacity_intervention(
     intervention_start_week: dt.date,
     candidate_multipliers: list[float] = (1.1, 1.15, 1.2, 1.3, 1.4, 1.5, 1.75, 2.0),
 ) -> dict:
-    """[CP3.1 req. D] Tries increasing capacity multipliers (smallest first)
-    applied to `work_centre_ids` from `intervention_start_week` onward, and
-    returns the smallest one where combined backlog across those work
-    centres peaks and then declines by the end of the horizon (not just
-    grows more slowly) -- reports the smallest that recovers rather than
-    picking an arbitrarily large number."""
+    """[CP3.1 req. D, superseded in scope by CP3.2 req. 5's per-work-centre
+    version below] Tries increasing capacity multipliers (smallest first)
+    applied to ALL of `work_centre_ids` simultaneously, and returns the
+    smallest one where their COMBINED backlog peaks then declines. Kept for
+    backward compatibility with the CP3 test suite; prefer
+    find_smallest_recovering_capacity_intervention_per_work_centre for
+    anything reported as "the" recovery multiplier, since a single shared
+    multiplier does not guarantee every individual work centre recovers
+    (see tasks/lessons.md)."""
     for multiplier in candidate_multipliers:
         capacity_lever = {wc_id: (multiplier, intervention_start_week) for wc_id in work_centre_ids}
         trial_inputs = dict(scenario_inputs)
@@ -175,18 +178,67 @@ def find_smallest_recovering_capacity_intervention(
     return {"multiplier": None, "output": output, "combined_backlog_series": series, "peak": peak, "peak_index": peak_idx}
 
 
+def _recovers(series: list[float]) -> tuple[bool, float, int]:
+    peak = max(series)
+    peak_idx = series.index(peak)
+    recovered = peak_idx < len(series) - 1 and series[-1] < peak
+    return recovered, peak, peak_idx
+
+
+def find_smallest_recovering_capacity_intervention_per_work_centre(
+    scenario_inputs: dict,
+    work_centre_ids: list[int],
+    intervention_start_week: dt.date,
+    candidate_multipliers: list[float] = (1.1, 1.15, 1.2, 1.3, 1.4, 1.5, 1.75, 2.0, 2.5, 3.0),
+) -> dict[int, dict]:
+    """[CP3.2 req. 5] Searches each work centre INDEPENDENTLY (all others
+    held at their scenario capacity) for the smallest multiplier that makes
+    ITS OWN backlog peak then decline -- replacing the combined-backlog
+    search, which sized one shared multiplier off the aggregate and could
+    leave individual work centres under-recovered (observed in CP3.1: a
+    1.3x multiplier sized for four work centres combined left one of them,
+    POWDER_COATING, still growing). Returns {work_centre_id: {multiplier,
+    peak, peak_index, backlog_series}}, using None for a work centre where
+    nothing in the candidate list recovered it.
+    """
+    results: dict[int, dict] = {}
+    for wc_id in work_centre_ids:
+        found = None
+        for multiplier in candidate_multipliers:
+            trial_inputs = dict(scenario_inputs)
+            trial_inputs["capacity_multiplier_by_work_centre"] = {wc_id: (multiplier, intervention_start_week)}
+            output = run_period_engine(**trial_inputs)
+            series = [r.backlog_hours_end for r in output.wc_series(wc_id)]
+            recovered, peak, peak_idx = _recovers(series)
+            if recovered:
+                found = {"multiplier": multiplier, "peak": peak, "peak_index": peak_idx, "backlog_series": series}
+                break
+        if found is None:
+            # Report what the largest candidate achieved, for transparency.
+            trial_inputs = dict(scenario_inputs)
+            trial_inputs["capacity_multiplier_by_work_centre"] = {wc_id: (candidate_multipliers[-1], intervention_start_week)}
+            output = run_period_engine(**trial_inputs)
+            series = [r.backlog_hours_end for r in output.wc_series(wc_id)]
+            _, peak, peak_idx = _recovers(series)
+            found = {"multiplier": None, "peak": peak, "peak_index": peak_idx, "backlog_series": series}
+        results[wc_id] = found
+    return results
+
+
 def run_four_intervention_comparison(
     tables: dict[str, pd.DataFrame],
     horizon: list[dt.date],
     demand_multiplier: float = 1.4,
     buffer_boost_per_item: float = 40.0,
 ) -> dict:
-    """[CP3.1 req. E] BASELINE / BUFFER_ONLY / CAPACITY_ONLY / COMBINED,
-    all driven off the same +40% CAB-100 demand shock. Buffer-only adds
+    """[CP3.1 req. E, CP3.2 req. 5] BASELINE / BUFFER_ONLY / CAPACITY_ONLY /
+    COMBINED, all driven off the same demand shock. Buffer-only adds
     standing safety-stock inventory to the items whose routing loads the
-    emergent-constraint work centre(s) -- it changes nothing about capacity.
-    Capacity-only and combined both use the smallest recovering capacity
-    intervention found by find_smallest_recovering_capacity_intervention.
+    emergent-constraint work centre(s) -- it changes nothing about capacity
+    (proven in test_reconciliation.py). Capacity-only and combined each use
+    a PER-WORK-CENTRE recovery multiplier (CP3.2 req. 5) rather than one
+    multiplier shared across all emergent work centres, so each one's own
+    recovery is what's actually being sized -- not just their combined sum.
     """
     shock = run_cab100_demand_shock(tables, horizon, demand_multiplier)
     scenario_inputs = shock["scenario_inputs"]
@@ -201,8 +253,10 @@ def run_four_intervention_comparison(
     ]
     intervention_start = min(overload_weeks) if overload_weeks else horizon[len(horizon) // 2]
 
-    capacity_search = find_smallest_recovering_capacity_intervention(scenario_inputs, emergent, intervention_start)
-    multiplier = capacity_search["multiplier"] or 2.0
+    per_wc_search = find_smallest_recovering_capacity_intervention_per_work_centre(scenario_inputs, emergent, intervention_start)
+    capacity_lever = {
+        wc_id: (result["multiplier"] or 3.0, intervention_start) for wc_id, result in per_wc_search.items()
+    }
 
     buffer_targets = items_loading_work_centres(
         scenario_inputs["routing_headers_df"], scenario_inputs["routing_operations_df"], emergent
@@ -216,19 +270,19 @@ def run_four_intervention_comparison(
     buffer_only = run_period_engine(**buffer_only_inputs)
 
     capacity_only_inputs = dict(scenario_inputs)
-    capacity_only_inputs["capacity_multiplier_by_work_centre"] = {wc_id: (multiplier, intervention_start) for wc_id in emergent}
+    capacity_only_inputs["capacity_multiplier_by_work_centre"] = capacity_lever
     capacity_only = run_period_engine(**capacity_only_inputs)
 
     combined_inputs = dict(scenario_inputs)
     combined_inputs["buffer_boost_by_item"] = buffer_boost
-    combined_inputs["capacity_multiplier_by_work_centre"] = {wc_id: (multiplier, intervention_start) for wc_id in emergent}
+    combined_inputs["capacity_multiplier_by_work_centre"] = capacity_lever
     combined = run_period_engine(**combined_inputs)
 
     return {
         "emergent_constraints": emergent,
         "intervention_start_week": intervention_start,
-        "capacity_multiplier": multiplier,
-        "capacity_search": capacity_search,
+        "per_work_centre_multipliers": {wc_id: r["multiplier"] for wc_id, r in per_wc_search.items()},
+        "per_work_centre_search": per_wc_search,
         "BASELINE": baseline,
         "DEMAND_SHOCK_ONLY": shock["scenario"],
         "BUFFER_ONLY": buffer_only,

@@ -73,6 +73,42 @@
 - [x] 7 new tests (MRP netting golden cases, intervention timing/buffer-vs-
       capacity distinction, historical-example selection), 71 total passing
 
+## CP3.2 — Calibration + flow-conservation pass — COMPLETE
+
+- [x] Isolated capacity-related randomness onto its own `capacity_rng`
+      stream (SeedSequence.spawn), decoupled from demand/BOM generation —
+      shift-pattern/multiplicity tuning no longer reshuffles unrelated
+      numbers (see tasks/lessons.md); shift pattern now drawn once per
+      process (not per instance) so parallel lines share real capacity
+- [x] Further per-process calibration: LASER_CUTTING/ASSEMBLY/BENDING/
+      PACKAGING/POWDER_COATING multiplicity retuned, welding's per-unit time
+      tightened again — baseline backlog is now genuinely self-correcting
+      (peaks ~week 6, declines, not monotonic) instead of exploding to
+      1,256h by week 12
+- [x] WELDING now emerges as the natural CAB-100-shock constraint (baseline
+      avg utilization 0.89, occasional single-week overloads, never
+      persistent; CAB-100 +40% pushes it to PRIMARY_CONSTRAINT) — found
+      generically via find_emergent_constraints, never hardcoded
+- [x] Flow-conservation reconciliation (analytics/reconciliation.py): two
+      identities proven true by construction and verified on real data —
+      work-centre hours (required = completed + ending backlog) and
+      material flow (gross = from_inventory + from_receipts + net) — both
+      hold to discrepancy=0.000000 across baseline/shock/buffer/capacity/
+      combined runs
+- [x] System-level KPIs beyond single-WC backlog: completed units, ending
+      WIP, ending backlog, overdue/unmet estimate, avg/P90/P95 lead time,
+      Analytical Service-Risk Indicator (LOW/MEDIUM/HIGH)
+- [x] Per-work-centre (not combined) recovery-multiplier search — replaces
+      CP3.1's one-shared-multiplier approach that could under-recover an
+      individual work centre
+- [x] Explicit "where does buffer's improvement go" proof: an exact +40/-40
+      unit swing between satisfied_from_inventory and net_requirement for
+      the buffered item, with demand (gross) and capacity (effective_hours)
+      both bit-identical to the no-buffer run
+- [x] 13 new tests (reconciliation identities, buffer-cannot-create-capacity/
+      destroy-demand, per-WC intervention sizing, system KPI service-risk
+      classification), 84 total passing
+
 ## Next (CP4, per PLAN.md)
 
 - [ ] Scenario engine: baseline/buffer-only/capacity-only/combined via

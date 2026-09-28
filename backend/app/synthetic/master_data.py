@@ -32,18 +32,18 @@ PROCESS_TYPES_IN_FLOW_ORDER = [
 # Work centre codes generated (>=1 per process type, 2 for the ones that are
 # realistically higher-volume / most likely to bottleneck).
 _WC_MULTIPLICITY = {
-    "LASER_CUTTING": 2,
+    "LASER_CUTTING": 3,
     "PUNCHING": 1,
     "DEBURRING": 1,
-    "BENDING": 2,
+    "BENDING": 3,
     "WELDING": 1,
     "GRINDING": 1,
-    "POWDER_COATING": 2,
-    "PAINTING": 1,
-    "ASSEMBLY": 2,
-    "ELECTRICAL_ASSEMBLY": 2,
+    "POWDER_COATING": 4,
+    "PAINTING": 2,
+    "ASSEMBLY": 5,
+    "ELECTRICAL_ASSEMBLY": 3,
     "INSPECTION": 3,
-    "PACKAGING": 2,
+    "PACKAGING": 3,
 }
 # [CP3.1 calibration] WELDING is deliberately calibrated tighter (1-2
 # shifts, capped below the default's chance of 3) so it carries the least
@@ -135,6 +135,16 @@ def generate_work_centres(ctx: GenContext) -> pd.DataFrame:
     }
     for process in PROCESS_TYPES_IN_FLOW_ORDER:
         mult = _WC_MULTIPLICITY[process]
+        # [CP3.2 calibration] Shift pattern is drawn ONCE per process and
+        # applied to every parallel line of it, not re-randomized per
+        # instance. Round-robin work assignment (see bom_and_routing.py)
+        # already sends each line an even share of operations; independently
+        # randomizing shifts per instance was undoing that balance by giving
+        # "identical" parallel lines very different capacity (e.g. one
+        # 1-shift, one 3-shift ASSEMBLY line fed equal work), which is what
+        # produced the lopsided per-instance utilization CP3.1 flagged.
+        shift_options, shift_weights = _SHIFT_WEIGHTS_BY_PROCESS.get(process, _DEFAULT_SHIFT_WEIGHTS)
+        process_shifts_per_day = int(ctx.capacity_rng.choice(shift_options, p=shift_weights))
         for _ in range(mult):
             counters[process] = counters.get(process, 0) + 1
             idx = counters[process]
@@ -144,17 +154,16 @@ def generate_work_centres(ctx: GenContext) -> pd.DataFrame:
                 "POWDER_COATING": "PWDCOAT", "PAINTING": "PAINT", "ASSEMBLY": "ASSY",
                 "ELECTRICAL_ASSEMBLY": "ELECASSY", "INSPECTION": "INSPECT", "PACKAGING": "PACK",
             }[process]
-            shift_options, shift_weights = _SHIFT_WEIGHTS_BY_PROCESS.get(process, _DEFAULT_SHIFT_WEIGHTS)
             rows.append({
                 "work_centre_id": seq.next(),
                 "work_centre_code": f"WC-{code_short}-{idx:02d}",
                 "name": f"{process.replace('_', ' ').title()} {idx}",
                 "site_id": site_id,
                 "process_type": process,
-                "shifts_per_day": int(ctx.rng.choice(shift_options, p=shift_weights)),
+                "shifts_per_day": process_shifts_per_day,
                 "hours_per_shift": 8.0,
                 "days_per_week": 5,
-                "cost_per_hour": float(cost_by_process[process] + ctx.rng.integers(-5, 5)),
+                "cost_per_hour": float(cost_by_process[process] + ctx.capacity_rng.integers(-5, 5)),
             })
     df = pd.DataFrame(rows)
     ctx.add_table("work_centres", df)

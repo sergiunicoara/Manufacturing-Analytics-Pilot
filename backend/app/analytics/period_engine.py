@@ -78,6 +78,7 @@ class WorkCentrePeriodResult:
     utilization_pct: float
     backlog_hours_start: float
     backlog_hours_end: float
+    completed_hours: float  # [CP3.2] hours of work actually processed this period -- see reconciliation.py
     wip_qty: float
     queue_time_days: float
     constraint_classification: str
@@ -307,9 +308,16 @@ def run_period_engine(
             if math.isnan(cap.utilization_pct):
                 backlog_end = backlog_start  # unreliable capacity data this period — carry state, don't corrupt it
                 queue_time_days = float("nan")
+                completed_hours = float("nan")
             else:
                 backlog_end = max(0.0, backlog_start + required_hours - cap.effective_hours)
                 queue_time_days = base_queue_days.get(wc_id, 0.0) + backlog_end / (cap.effective_hours / 7.0)
+                # [CP3.2] Flow-conservation identity (see analytics/reconciliation.py):
+                # required_hours + backlog_start = completed_hours + backlog_end,
+                # i.e. completed_hours = min(effective_hours, backlog_start + required_hours).
+                # True by construction of the backlog formula above -- stored
+                # explicitly so it can be reported and tested, not just implied.
+                completed_hours = min(cap.effective_hours, backlog_start + required_hours)
             backlog_state[wc_id] = backlog_end
 
             minutes_per_unit = avg_minutes_per_unit.get(wc_id)
@@ -324,7 +332,8 @@ def run_period_engine(
                 calendar_hours=cap.calendar_hours, available_hours=cap.available_hours,
                 effective_hours=cap.effective_hours, required_hours=cap.required_hours,
                 utilization_pct=cap.utilization_pct, backlog_hours_start=backlog_start,
-                backlog_hours_end=backlog_end, wip_qty=wip_qty, queue_time_days=queue_time_days,
+                backlog_hours_end=backlog_end, completed_hours=completed_hours, wip_qty=wip_qty,
+                queue_time_days=queue_time_days,
                 constraint_classification=classification, excluded_routing_operation_ids=cap.excluded_routing_operation_ids,
             ))
 
