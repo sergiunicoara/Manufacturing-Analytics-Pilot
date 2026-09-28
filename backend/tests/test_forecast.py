@@ -11,6 +11,7 @@ from app.analytics.forecast import (
     compute_accuracy_by_horizon,
     compute_forecast_volatility,
     consume_forecast,
+    find_best_historical_example,
     reconstruct_forecast_history,
 )
 
@@ -161,6 +162,29 @@ def test_accuracy_improves_at_shorter_horizons_in_a_converging_example():
     # sample each, but demonstrates both are computed and comparable.
     assert "21w+" in result.index or "13-20w" in result.index
     assert "3-4w" in result.index
+
+
+def test_find_best_historical_example_prefers_most_revisions_and_realized_actual():
+    history = pd.DataFrame([
+        # bucket A: 2 revisions, realized
+        {"customer_id": 1, "item_id": 10, "site_id": 1, "delivery_period_start": dt.date(2026, 1, 5), "actual_qty": 50, "horizon_weeks": 8},
+        {"customer_id": 1, "item_id": 10, "site_id": 1, "delivery_period_start": dt.date(2026, 1, 5), "actual_qty": 50, "horizon_weeks": 4},
+        # bucket B: 3 revisions, realized -- should win (more revisions)
+        {"customer_id": 2, "item_id": 11, "site_id": 1, "delivery_period_start": dt.date(2026, 2, 2), "actual_qty": 80, "horizon_weeks": 12},
+        {"customer_id": 2, "item_id": 11, "site_id": 1, "delivery_period_start": dt.date(2026, 2, 2), "actual_qty": 80, "horizon_weeks": 8},
+        {"customer_id": 2, "item_id": 11, "site_id": 1, "delivery_period_start": dt.date(2026, 2, 2), "actual_qty": 80, "horizon_weeks": 4},
+        # bucket C: 5 revisions but unrealized (actual=0) -- must be excluded
+        *[{"customer_id": 3, "item_id": 12, "site_id": 1, "delivery_period_start": dt.date(2026, 6, 1), "actual_qty": 0, "horizon_weeks": h} for h in (26, 20, 16, 12, 8)],
+    ])
+    key = find_best_historical_example(history, min_revisions=1)
+    assert key == (2, 11, 1, dt.date(2026, 2, 2))
+
+
+def test_find_best_historical_example_returns_none_when_nothing_realized():
+    history = pd.DataFrame([
+        {"customer_id": 1, "item_id": 10, "site_id": 1, "delivery_period_start": dt.date(2026, 1, 5), "actual_qty": 0, "horizon_weeks": 4},
+    ])
+    assert find_best_historical_example(history) is None
 
 
 def test_forecast_volatility_requires_at_least_two_revisions():

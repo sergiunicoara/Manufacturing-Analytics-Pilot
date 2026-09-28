@@ -47,17 +47,31 @@
 - [x] 26 new tests (mini-plant mechanics + real-dataset golden scenarios),
       55 total passing
 
-## Known calibration gap (flagged for CP4/CP5, not an engine defect)
+## CP3.1 — MRP correctness + plant calibration pass — COMPLETE
 
-Plant-wide demand currently outstrips capacity at almost every work centre
-within 2-3 weeks of the horizon (INSPECTION, a singleton line serving all 140
-FG variants, is the plant's actual PRIMARY_CONSTRAINT — not welding). The
-engine's cross-work-centre primary-constraint selection is verified correct;
-the *inputs* need calibration (likely: more inspection/packaging capacity,
-and/or a further demand reduction) before CP5's "plant currently appears
-healthy" executive story premise holds plant-wide. Do this pass when building
-the CP4/CP5 dashboard, where the baseline narrative can be tuned iteratively
-against the live charts.
+- [x] Cascading multi-level MRP netting (app/analytics/mrp.py): low-level
+      coding + one-level-at-a-time explosion driven by NET (not gross)
+      requirement; exact golden tests for the FRAME/80-inventory invariant
+- [x] Plant recalibration: demand base_level halved again (5-55 -> 2-20),
+      per-process work-centre multiplicity/shift-pattern retuned, round-robin
+      (not random) work-centre assignment for parallel lines, welding's
+      per-unit time/batch tightened — baseline now 9/20 work centres in the
+      55-85% band, only 6/20 ever reach CANDIDATE/PRIMARY_CONSTRAINT and only
+      from week 7+, not from week 1
+- [x] CAB-100 +40% scenario now runs over 16 weeks with generic emergent-
+      constraint detection (diffs baseline vs. scenario classifications —
+      never assumes which work centre will be affected)
+- [x] Smallest-recovering-capacity-intervention search (tries increasing
+      multipliers, returns the first where backlog peaks then declines)
+      applied from a dynamically-detected intervention week, not day one
+- [x] Four intervention cases (BASELINE/BUFFER_ONLY/CAPACITY_ONLY/COMBINED):
+      buffer = one-time inventory boost (proven not to touch effective_hours),
+      capacity = time-scoped multiplier; results reported as computed, not
+      forced toward any expected ordering
+- [x] Historical (fully realized) forecast-revision example alongside the
+      future/unrealized one
+- [x] 7 new tests (MRP netting golden cases, intervention timing/buffer-vs-
+      capacity distinction, historical-example selection), 71 total passing
 
 ## Next (CP4, per PLAN.md)
 

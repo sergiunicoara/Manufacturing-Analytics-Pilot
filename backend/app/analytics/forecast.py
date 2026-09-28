@@ -237,6 +237,31 @@ def to_top_level_demand(planning_demand_df: pd.DataFrame) -> dict:
     return result
 
 
+def find_best_historical_example(history_df: pd.DataFrame, min_revisions: int = 4) -> tuple | None:
+    """[CP3.1 req. F] Picks a (customer, item, site, delivery_period_start)
+    bucket that is fully realized (actual_qty > 0) and has the most
+    preserved weekly revisions, so the full weekly-forecast-revisions ->
+    firm-order -> horizon-specific-error chain can be shown end-to-end for
+    a real, already-happened delivery, not just the future/unrealized
+    example. Prefers more revisions, then an earlier (more clearly
+    "historical") delivery bucket. Returns None if nothing qualifies.
+    """
+    realized = history_df.loc[history_df["actual_qty"] > 0]
+    if realized.empty:
+        return None
+    counts = realized.groupby(["customer_id", "item_id", "site_id", "delivery_period_start"]).size()
+    counts = counts.loc[counts >= min(min_revisions, counts.max())]
+    if counts.empty:
+        return None
+    best = counts.sort_values(ascending=False)
+    top_count = best.iloc[0]
+    tied = best.loc[best == top_count]
+    # Among the most-revised buckets, prefer the earliest delivery date.
+    tied_keys = list(tied.index)
+    tied_keys.sort(key=lambda k: k[3])
+    return tied_keys[0]
+
+
 def compute_forecast_volatility(history_df: pd.DataFrame) -> pd.DataFrame:
     """Revision-to-revision volatility per (customer, item, site, delivery
     bucket): std dev of successive % changes in forecast_qty as the horizon

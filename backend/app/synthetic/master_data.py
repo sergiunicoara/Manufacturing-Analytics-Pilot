@@ -36,15 +36,28 @@ _WC_MULTIPLICITY = {
     "PUNCHING": 1,
     "DEBURRING": 1,
     "BENDING": 2,
-    "WELDING": 2,
+    "WELDING": 1,
     "GRINDING": 1,
-    "POWDER_COATING": 1,
+    "POWDER_COATING": 2,
     "PAINTING": 1,
     "ASSEMBLY": 2,
-    "ELECTRICAL_ASSEMBLY": 1,
-    "INSPECTION": 1,
-    "PACKAGING": 1,
+    "ELECTRICAL_ASSEMBLY": 2,
+    "INSPECTION": 3,
+    "PACKAGING": 2,
 }
+# [CP3.1 calibration] WELDING is deliberately calibrated tighter (1-2
+# shifts, capped below the default's chance of 3) so it carries the least
+# headroom of the fabrication processes at baseline -- meaning a
+# CAB-100/CAB-200-specific demand shock (which loads welding far more than
+# it loads the broadly-shared processes) pushes welding over first. This is
+# a capacity/shift-pattern assumption, not a hardcoded "welding is the
+# constraint" rule in the classification logic itself, which still discovers
+# the true bottleneck generically every run -- see tasks/lessons.md for the
+# calibration iterations that arrived at this specific set of numbers.
+_SHIFT_WEIGHTS_BY_PROCESS: dict[str, tuple[list[int], list[float]]] = {
+    "WELDING": ([1], [1.0]),
+}
+_DEFAULT_SHIFT_WEIGHTS: tuple[list[int], list[float]] = ([1, 2, 3], [0.4, 0.4, 0.2])
 
 
 def generate_sites(ctx: GenContext) -> pd.DataFrame:
@@ -131,13 +144,14 @@ def generate_work_centres(ctx: GenContext) -> pd.DataFrame:
                 "POWDER_COATING": "PWDCOAT", "PAINTING": "PAINT", "ASSEMBLY": "ASSY",
                 "ELECTRICAL_ASSEMBLY": "ELECASSY", "INSPECTION": "INSPECT", "PACKAGING": "PACK",
             }[process]
+            shift_options, shift_weights = _SHIFT_WEIGHTS_BY_PROCESS.get(process, _DEFAULT_SHIFT_WEIGHTS)
             rows.append({
                 "work_centre_id": seq.next(),
                 "work_centre_code": f"WC-{code_short}-{idx:02d}",
                 "name": f"{process.replace('_', ' ').title()} {idx}",
                 "site_id": site_id,
                 "process_type": process,
-                "shifts_per_day": int(ctx.rng.choice([1, 2, 2, 3])),
+                "shifts_per_day": int(ctx.rng.choice(shift_options, p=shift_weights)),
                 "hours_per_shift": 8.0,
                 "days_per_week": 5,
                 "cost_per_hour": float(cost_by_process[process] + ctx.rng.integers(-5, 5)),

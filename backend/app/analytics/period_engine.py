@@ -12,18 +12,20 @@ Scope decisions, documented rather than silently assumed:
    operations are not offset backward by their own lead time. This is a
    standard simplification in capacity-planning tools; a truly finite,
    operation-by-operation schedule is out of scope for this pilot.
-2. **Single-level netting per item per period, not full low-level-coded
-   MRP.** Each item (FG/SUBASSY/RAW/PACKAGING) is netted against its own
-   carried-forward inventory and scheduled receipts every period. A
-   subassembly's on-hand inventory does *not* cascade to reduce its own
-   components' gross requirement — that would require full recursive
-   low-level-coded MRP (processing every item in strict level order,
-   accumulating multi-parent demand before netting once). Gross requirement
-   for every node is still computed by CP2's full BOM explosion, which
-   already correctly aggregates a shared component's demand across every
-   path that uses it; only the *netting offset* (inventory/receipts) is now
-   period-stateful. This is a real simplification versus a production MRP
-   system, and is called out again in ASSUMPTIONS.md.
+2. **Cascading multi-level MRP netting [CP3.1 req. A]**, superseding CP3's
+   original single-level-per-period limitation. Items are netted in
+   ascending low-level-code order (app.analytics.mrp.compute_low_level_codes)
+   so a parent's NET requirement — not its gross — is what explodes one
+   level down (app.analytics.mrp.explode_one_level), and a shared component
+   accumulates demand from every parent that uses it, at any depth, before
+   being netted exactly once. A subassembly's on-hand inventory therefore
+   *does* reduce its own components' requirement: 100 units of a parent
+   needing 1 FRAME each, with 80 FRAME already on hand, nets to a FRAME
+   requirement of 20 — and only 20 FRAME's worth of demand cascades further
+   down into FRAME's own components. This replaces CP3's full-gross-then-net
+   approach (which computed component demand as if every level were always
+   built from scratch) and is the direct fix for CP3's "known calibration
+   gap" note about overstated plant-wide load.
 3. **Unified queue/backlog formula, replacing the two-regime split sketched
    in PLAN.md's original CORR-1.** The original design used a bounded delay
    curve below a utilization threshold and switched to backlog accumulation
@@ -58,9 +60,9 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from app.analytics.blocking import BlockingIndex
-from app.analytics.bom import explode
 from app.analytics.capacity import compute_capacity, compute_required_hours_by_work_centre
 from app.analytics.constraint import ConstraintState, select_primary_constraint, step_work_centre
+from app.analytics.mrp import compute_low_level_codes, explode_one_level
 from app.analytics.netting import net_requirement
 from app.config import settings
 
@@ -153,6 +155,18 @@ def _bucket_receipts_by_item_period(
     return bucketed
 
 
+def _resolve_capacity_multiplier(value: float | tuple[float, dt.date], period: dt.date) -> float:
+    """A capacity lever entry is either a flat float (applies the whole
+    horizon) or (multiplier, effective_from_date) [CP3.1 req. D] — so an
+    intervention can be modeled as "applied starting week N", not just
+    "always on", to demonstrate peak -> recovery rather than a flat-shifted
+    trajectory from day one."""
+    if isinstance(value, tuple):
+        multiplier, effective_from = value
+        return multiplier if period >= effective_from else 1.0
+    return value
+
+
 def run_period_engine(
     horizon: list[dt.date],
     top_level_demand: dict[dt.date, dict[int, float]],
@@ -167,11 +181,19 @@ def run_period_engine(
     initial_inventory: dict[int, float],
     blocking_index: BlockingIndex,
     demand_multiplier_by_item: dict[int, float] | None = None,
-    capacity_multiplier_by_work_centre: dict[int, float] | None = None,
+    capacity_multiplier_by_work_centre: dict[int, float | tuple[float, dt.date]] | None = None,
+    buffer_boost_by_item: dict[int, float] | None = None,
     min_consecutive_periods: int | None = None,
 ) -> PeriodEngineOutput:
+    """`buffer_boost_by_item` [CP3.1 req. E]: a one-time addition to that
+    item's opening inventory, representing a standing safety-stock decision
+    made before the horizon starts. It changes nothing about capacity or
+    routing — a BUFFER_ONLY scenario can smooth/delay when a shortage first
+    bites, but cannot fix a sustained capacity deficit, which is exactly the
+    numeric distinction CP3.1 asks the four intervention cases to prove."""
     demand_multiplier_by_item = demand_multiplier_by_item or {}
     capacity_multiplier_by_work_centre = capacity_multiplier_by_work_centre or {}
+    buffer_boost_by_item = buffer_boost_by_item or {}
     min_consecutive = min_consecutive_periods or settings.candidate_constraint_min_consecutive_periods
 
     items_by_id = items_df.set_index("item_id")
@@ -179,8 +201,12 @@ def run_period_engine(
     base_queue_days = _base_queue_time_days_by_work_centre(routing_operations_df)
     avg_minutes_per_unit = _avg_minutes_per_unit_by_work_centre(routing_operations_df)
     receipts_by_item_period = _bucket_receipts_by_item_period(purchase_order_lines_df, horizon)
+    low_level_codes = compute_low_level_codes(items_df, bom_headers_df, bom_components_df)
+    max_llc = max(low_level_codes.values(), default=0)
 
     inventory_state: dict[int, float] = dict(initial_inventory)
+    for item_id, boost in buffer_boost_by_item.items():
+        inventory_state[item_id] = inventory_state.get(item_id, 0.0) + boost
     backlog_state: dict[int, float] = {int(wc): 0.0 for wc in work_centres_df["work_centre_id"]}
     constraint_state: dict[int, ConstraintState] = {int(wc): ConstraintState() for wc in work_centres_df["work_centre_id"]}
 
@@ -189,47 +215,64 @@ def run_period_engine(
     for period in sorted(horizon):
         period_demand = top_level_demand.get(period, {})
 
-        # --- 1. BOM explosion: aggregate gross requirement for every node
-        #        (FG items themselves + every component at every level). ---
-        gross_by_item: dict[int, float] = {}
+        # --- 1+2. Cascading multi-level MRP [CP3.1 req. A]: net each item
+        #     against its own carried-forward inventory/receipts, then
+        #     explode only its NET requirement one level down, in ascending
+        #     low-level-code order so every parent (at any depth) has
+        #     already contributed its demand before a shared component is
+        #     netted. See app.analytics.mrp module docstring. ---
+        demand_by_item: dict[int, float] = {}
         for item_id, qty in period_demand.items():
             qty = qty * demand_multiplier_by_item.get(item_id, 1.0)
-            if qty <= 0:
-                continue
-            gross_by_item[item_id] = gross_by_item.get(item_id, 0.0) + qty
-            if blocking_index.is_entity_blocked("item", item_id):
-                continue  # BOM branch blocked (orphan/cycle/ambiguous revision/etc.) — do not explode further
-            result = explode(item_id, qty, period, items_df, bom_headers_df, bom_components_df)
-            for comp_id, comp_qty in result.aggregated_requirements.items():
-                gross_by_item[comp_id] = gross_by_item.get(comp_id, 0.0) + comp_qty
+            if qty > 0:
+                demand_by_item[item_id] = demand_by_item.get(item_id, 0.0) + qty
 
-        # --- 2. Netting, period-stateful [CP3 req. 1]. ---
         net_by_item: dict[int, float] = {}
-        for item_id, gross in gross_by_item.items():
-            item_code = str(items_by_id.loc[item_id, "item_code"]) if item_id in items_by_id.index else "UNKNOWN"
-            usable = 0.0 if blocking_index.is_entity_blocked("item", item_id) else inventory_state.get(item_id, 0.0)
-            receipts = receipts_by_item_period.get((item_id, period), 0.0)
+        gross_by_item: dict[int, float] = {}
 
-            inv_rows = pd.DataFrame([{"on_hand_qty": usable, "is_blocked": False}]) if usable != 0 else pd.DataFrame(
-                columns=["on_hand_qty", "is_blocked"]
-            )
-            po_rows = pd.DataFrame([{
-                "qty_ordered": receipts, "qty_received": 0.0, "expected_receipt_date": period, "status": "OPEN",
-            }]) if receipts > 0 else pd.DataFrame(columns=["qty_ordered", "qty_received", "expected_receipt_date", "status"])
+        for level in range(0, max_llc + 1):
+            items_at_level = [
+                item_id for item_id, qty in demand_by_item.items()
+                if low_level_codes.get(item_id, 0) == level and qty > 0
+            ]
+            for item_id in items_at_level:
+                gross = demand_by_item[item_id]
+                gross_by_item[item_id] = gross_by_item.get(item_id, 0.0) + gross
+                item_code = str(items_by_id.loc[item_id, "item_code"]) if item_id in items_by_id.index else "UNKNOWN"
 
-            result = net_requirement(item_id, item_code, gross, period, inv_rows, po_rows)
-            net_by_item[item_id] = result.net_requirement
+                usable = 0.0 if blocking_index.is_entity_blocked("item", item_id) else inventory_state.get(item_id, 0.0)
+                receipts = receipts_by_item_period.get((item_id, period), 0.0)
+                inv_rows = pd.DataFrame([{"on_hand_qty": usable, "is_blocked": False}]) if usable != 0 else pd.DataFrame(
+                    columns=["on_hand_qty", "is_blocked"]
+                )
+                po_rows = pd.DataFrame([{
+                    "qty_ordered": receipts, "qty_received": 0.0, "expected_receipt_date": period, "status": "OPEN",
+                }]) if receipts > 0 else pd.DataFrame(columns=["qty_ordered", "qty_received", "expected_receipt_date", "status"])
 
-            available = usable + receipts
-            consumed = min(available, gross)
-            inventory_state[item_id] = max(0.0, available - consumed)
+                result = net_requirement(item_id, item_code, gross, period, inv_rows, po_rows)
+                net_by_item[item_id] = net_by_item.get(item_id, 0.0) + result.net_requirement
 
-            output.material_results.append(MaterialRequirementPeriodResult(
-                item_id=item_id, item_code=item_code, period_start_date=period,
-                gross_requirement=result.gross_requirement, usable_inventory=result.usable_inventory,
-                scheduled_receipts=result.scheduled_receipts, net_requirement=result.net_requirement,
-                shortage_flag=result.shortage_quantity > 0,
-            ))
+                available = usable + receipts
+                consumed = min(available, gross)
+                inventory_state[item_id] = max(0.0, available - consumed)
+
+                output.material_results.append(MaterialRequirementPeriodResult(
+                    item_id=item_id, item_code=item_code, period_start_date=period,
+                    gross_requirement=result.gross_requirement, usable_inventory=result.usable_inventory,
+                    scheduled_receipts=result.scheduled_receipts, net_requirement=result.net_requirement,
+                    shortage_flag=result.shortage_quantity > 0,
+                ))
+
+                if result.net_requirement <= 0 or blocking_index.is_entity_blocked("item", item_id):
+                    continue  # nothing left to build, or branch blocked — do not cascade further
+
+                one_level = explode_one_level(item_id, result.net_requirement, period, items_df, bom_headers_df, bom_components_df)
+                if one_level.incomplete:
+                    continue  # ambiguous revision etc. — do not silently cascade a guess
+                for child in one_level.children:
+                    if child.incomplete:
+                        continue  # orphan/invalid component — that branch's DQ finding already covers it
+                    demand_by_item[child.component_item_id] = demand_by_item.get(child.component_item_id, 0.0) + child.gross_qty
 
         # --- 3. Routing load: only manufactured items' NET requirement
         #        drives work-centre hours (inventory already on hand does
@@ -247,7 +290,7 @@ def run_period_engine(
         for wc_id in work_centres_df["work_centre_id"]:
             wc_id = int(wc_id)
             required_hours = required_by_wc.get(wc_id, 0.0)
-            multiplier = capacity_multiplier_by_work_centre.get(wc_id, 1.0)
+            multiplier = _resolve_capacity_multiplier(capacity_multiplier_by_work_centre.get(wc_id, 1.0), period)
 
             cap = compute_capacity(
                 wc_id, period, required_hours, capacity_calendar_df, blocking_index, excluded_ops,

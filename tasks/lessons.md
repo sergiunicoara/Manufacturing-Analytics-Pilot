@@ -1,5 +1,43 @@
 # Lessons
 
+## 2026-09-28 — CP3.1 calibration process (user rejected "mechanically correct but not demo-credible")
+
+The user accepted CP3's engine mechanics outright but rejected the checkpoint
+for demo purposes: the baseline was "plant already broken everywhere" rather
+than "healthy, then a shock creates a localized problem." Two lessons:
+
+1. **A single global scaling factor cannot fix a per-process imbalance.**
+   The first calibration attempt cut demand by one flat factor and measured
+   one aggregate ratio. The real per-process ratios ranged from 0.0 (unused)
+   to 10x (deburring) to 0.39x (welding, the one the demo story actually
+   needs to be tight) — a flat multiplier moves the average without fixing
+   the shape. Fix: measure and tune **per process type**, not once globally.
+2. **Changing *how* a seeded RNG is called (not just its bounds) reshuffles
+   every later draw, even in unrelated code.** Switching one `rng.choice(list)`
+   call to `rng.choice(options, p=weights)` changed work-centre shift
+   assignment for a different process entirely three iterations later, which
+   looked like unrelated noise until traced back. Changing only a tuple's
+   *values* passed into an unchanged call site (e.g. `PROCESS_TIME_DEFAULTS`
+   bounds) does NOT reshuffle anything downstream — only a change in call
+   pattern/shape does. When iterating on generator calibration, expect either
+   "this and only this changes" (same call shape, different constant) or
+   "everything downstream changes" (different call shape) and don't waste
+   time hunting for a narrower explanation than that.
+3. **Random assignment across parallel resources creates artificial
+   lopsidedness that reads as a data bug, not a real bottleneck.** Two
+   identical-capacity welding lines showed wildly different utilization
+   purely from `rng.choice` clustering items onto one of them by chance.
+   Round-robin assignment (deterministic, still seeded/reproducible) fixed
+   it immediately and is more realistic besides — real plants load-balance
+   parallel lines rather than randomly clustering work.
+
+**How to apply going forward**: when a user says a checkpoint's *mechanics*
+are right but the checkpoint isn't *demo-ready*, don't re-litigate the
+mechanics — treat it as a distinct calibration/tuning task with its own
+measure-adjust-remeasure loop, and report the actual per-unit (not
+aggregate) numbers at each step so drift is visible immediately rather than
+after several compounded changes.
+
 ## 2026-09-28 — CP3 self-caught bugs and a design refinement
 
 1. **Same root cause as CP2's NaT lesson, different symptom.** `capacity_calendar_df["week_start_date"] == pd.Timestamp(period_start_date)` is silently always False when the column holds plain `datetime.date` (in-memory generator context) rather than `pd.Timestamp` (DB-loaded) — `date == Timestamp` doesn't raise, it just never matches. This produced NaN capacity for *every* period in a test run against in-memory tables, which masked as "backlog never accumulates" rather than an obvious crash. Fix: normalize both sides via `pd.to_datetime(...).dt.date` before comparing, every time a date/Timestamp-typed column might come from either source. **Generalized rule**: any date/Timestamp comparison must normalize first — this is now the second time it's bitten a different function.

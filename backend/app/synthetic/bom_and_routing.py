@@ -71,7 +71,13 @@ PROCESS_TIME_DEFAULTS = {
     "PUNCHING": {"setup": (15, 30), "run": (0.5, 1.5), "batch": (10, 30)},
     "DEBURRING": {"setup": (5, 15), "run": (0.3, 1.0), "batch": (10, 30)},
     "BENDING": {"setup": (20, 45), "run": (1.0, 3.0), "batch": (5, 20)},
-    "WELDING": {"setup": (30, 60), "run": (3.0, 6.0), "batch": (5, 15)},
+    # [CP3.1 calibration] run time raised and batch size lowered relative to
+    # the other fabrication steps so welding carries the least headroom at
+    # baseline capacity (see master_data.py's _SHIFT_WEIGHTS_BY_PROCESS
+    # comment) -- a deliberate per-process time/batch assumption, not a
+    # capacity-side special case, and still just one input the constraint
+    # classifier has to discover on its own merits every run.
+    "WELDING": {"setup": (30, 60), "run": (16.0, 24.0), "batch": (2, 5)},
     "GRINDING": {"setup": (10, 20), "run": (0.5, 1.5), "batch": (5, 20)},
     "POWDER_COATING": {"setup": (30, 50), "run": (2.0, 4.0), "batch": (20, 50)},
     "PAINTING": {"setup": (25, 45), "run": (2.5, 5.0), "batch": (10, 30)},
@@ -105,6 +111,13 @@ class BomRoutingBuilder:
             p: wc.loc[wc["process_type"] == p, "work_centre_id"].tolist()
             for p in PROCESS_TYPES_IN_FLOW_ORDER
         }
+        # [CP3.1 calibration] Round-robin rather than random choice: a real
+        # plant load-balances parallel lines rather than randomly clustering
+        # work onto one of them. Random assignment was producing lopsided
+        # baseline utilization between two identical-capacity lines of the
+        # same process purely by chance, which read as a data artifact
+        # rather than a real constraint.
+        self._wc_round_robin_index: dict[str, int] = {p: 0 for p in PROCESS_TYPES_IN_FLOW_ORDER}
 
     # -- helpers ---------------------------------------------------
 
@@ -113,7 +126,9 @@ class BomRoutingBuilder:
 
     def _pick_wc(self, process_type: str) -> int:
         options = self.wc_by_process[process_type]
-        return int(self.ctx.rng.choice(options))
+        idx = self._wc_round_robin_index[process_type]
+        self._wc_round_robin_index[process_type] = (idx + 1) % len(options)
+        return int(options[idx])
 
     def add_item(self, code: str, description: str, item_type: str, uom: str, family: str) -> int:
         item_id = self.item_seq.next()
