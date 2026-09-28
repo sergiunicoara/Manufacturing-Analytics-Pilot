@@ -14,12 +14,24 @@
 - [x] Minimal frontend scaffold, CORS fix, full docker compose up verified
 - [x] git init + CP1 commit
 
-## Next (CP2, per PLAN.md)
+## Next (CP2, per PLAN.md) — COMPLETE
 
-- [ ] Data Quality Engine: rule registry reading the intentionally-unenforced
-      columns and injected defects, writing to dq_findings
-- [ ] BOM explosion engine (recursive, cycle detection, effective-dating)
-- [ ] Material netting (CORR-4): gross requirement - usable inventory -
-      scheduled receipts = net requirement / shortage
-- [ ] Routing analytical layer
-- [ ] Unit tests: recursion, cycles, netting correctness
+- [x] Data Quality Engine: 20-rule registry (13 INJECTED, 7 ORGANIC), origin +
+      manifest_key tagging, writes to dq_findings
+- [x] BOM explosion engine (recursive, cycle detection, effective-dating,
+      full lineage with source record IDs)
+- [x] Material netting (CORR-4): gross requirement - usable inventory -
+      scheduled receipts = net requirement / shortage, persisted to
+      material_requirements under a baseline scenario_runs row
+- [x] Routing analytical layer (folded into DQ rules: missing WC/times,
+      invalid batch size/yield)
+- [x] Unit tests: recursion, cycles, orphans, overlapping revisions,
+      effective-date selection, scrap/yield propagation, netting exclusion/
+      timing/shortage, DQ rule cross-check vs. manifest (29 tests total)
+
+## Next (CP3, per PLAN.md)
+
+- [ ] Forecast reconstruction + scoped consumption (CORR-3) + accuracy metrics
+- [ ] Three-tier capacity (CORR-5) wired into a real engine
+- [ ] period_engine.py: stateful, period-stepped backlog/WIP (CORR-1/2)
+- [ ] Constraint classification (CORR-6)

@@ -1,5 +1,35 @@
 # Lessons
 
+## 2026-09-28 — CP2 self-caught bugs (verification against real DB, not just fixtures)
+
+Two bugs only surfaced when running against SQL-Server-loaded data, not
+against the in-memory generator context or hand-built unit-test fixtures:
+
+1. **`pandas.NaT` is not `None` and is not caught by
+   `isinstance(v, float) and pd.isna(v)`.** A DDL `DATE NULL` column comes
+   back from `pd.read_sql_table` as `NaT`, not `None`/`NaN`. Code that
+   special-cased "value is None or (is a float and NaN)" silently worked on
+   hand-built test fixtures (which used literal `None`) and crashed only
+   against real SQL-sourced data. Fix: always use bare `pd.isna(value)`,
+   which correctly handles `None`, `NaN`, and `NaT` in one call — never
+   gate it behind an `isinstance` check.
+2. **Sequential random data-quality injections can silently overwrite each
+   other on the same row.** `inject_implausible_lead_times` sampled from
+   *all* rows and could land on a row `inject_missing_routing_times` had
+   already nulled, un-nulling it. Caught by a test asserting "every planted
+   defect is still detectable," not by eyeballing row counts. Fix: each
+   injection function should sample only from rows still eligible for *that
+   specific* defect (e.g. "implausible" requires a present value to begin
+   with) rather than the full unfiltered table.
+
+**How to apply going forward**: (a) run new analytics code against the real
+Docker-loaded database at least once before declaring a checkpoint done —
+an in-memory-only or fixture-only test pass is not sufficient evidence when
+the code's actual input comes from a SQL round-trip; (b) when a generator
+injects multiple defect types via independent random sampling over the same
+table, treat "could sample #2 already be part of injection #1's effect"
+explicitly, since seeded-random sampling won't reliably avoid the same rows.
+
 ## 2026-09-28 — Plan-review corrections (round 2, before CP1)
 
 The user approved the initial architecture but caught 11 issues, all in the

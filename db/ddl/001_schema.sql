@@ -399,6 +399,14 @@ CREATE TABLE dq_findings (
     record_id                VARCHAR(60) NOT NULL,
     severity                 VARCHAR(20) NOT NULL,
     classification            VARCHAR(20) NOT NULL, -- TOLERABLE / ASSUMPTION_BASED / BLOCKING
+    -- [CP2 req. 1/2] origin distinguishes a defect the synthetic generator
+    -- deliberately planted (INJECTED, cross-referenced to the seeded
+    -- staging/dq_issue_manifest.json via manifest_key) from one the rule
+    -- engine discovered organically from relational/logical checks that are
+    -- not tied to any specific planted defect (ORGANIC — e.g. BOM cycle
+    -- detection, which nothing in the generator deliberately creates).
+    origin                    VARCHAR(20) NOT NULL DEFAULT 'ORGANIC', -- INJECTED / ORGANIC
+    manifest_key              VARCHAR(60) NULL, -- key into dq_issue_manifest.json when origin = INJECTED
     description               NVARCHAR(500) NOT NULL,
     detected_value            NVARCHAR(200) NULL,
     expected_constraint       NVARCHAR(200) NULL,
@@ -407,6 +415,7 @@ CREATE TABLE dq_findings (
 );
 CREATE INDEX ix_dq_findings_entity ON dq_findings(entity, record_id);
 CREATE INDEX ix_dq_findings_classification ON dq_findings(classification);
+CREATE INDEX ix_dq_findings_origin ON dq_findings(origin, manifest_key);
 
 CREATE TABLE scenario_runs (
     run_id              INT IDENTITY(1,1) PRIMARY KEY,

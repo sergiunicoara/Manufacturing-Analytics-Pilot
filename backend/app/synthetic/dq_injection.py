@@ -123,8 +123,12 @@ def inject_production_orders_without_routing(ctx: GenContext, rate: float = 0.02
 
 def inject_implausible_lead_times(ctx: GenContext, rate: float = 0.01) -> int:
     df = ctx.tables["routing_operations"]
+    # Implausible means "present but wrong" — restrict to rows that still
+    # have a value, so this never silently overwrites (and un-detects) a
+    # missing_routing_times injection on the same row.
+    candidates = df.loc[df["run_time_minutes_per_unit"].notna()]
     n = max(1, int(len(df) * rate))
-    idx = ctx.rng.choice(df.index, size=n, replace=False)
+    idx = ctx.rng.choice(candidates.index, size=n, replace=False)
     # Either near-zero or wildly large run time per unit — both implausible.
     for i in idx:
         df.loc[i, "run_time_minutes_per_unit"] = ctx.rng.choice([0.0001, 500.0])
