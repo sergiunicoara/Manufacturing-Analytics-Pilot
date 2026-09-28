@@ -6,6 +6,7 @@ venv/
 .pytest_cache/
 .mypy_cache/
 node_modules/
+frontend/.npm-cache/
 frontend/dist/
 staging/*.csv
 staging/*.parquet

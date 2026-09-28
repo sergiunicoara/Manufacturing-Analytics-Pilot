@@ -20,6 +20,7 @@ class Settings:
     mssql_user: str = os.environ.get("MSSQL_USER", "sa")
     mssql_password: str = os.environ.get("MSSQL_SA_PASSWORD", "DevOnly_ChangeMe_123!")
     anthropic_api_key: str | None = os.environ.get("ANTHROPIC_API_KEY") or None
+    anthropic_model: str = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 
     # --- Synthetic data generation ---
     synthetic_seed: int = int(os.environ.get("SYNTHETIC_DATA_SEED", "42"))

@@ -112,6 +112,7 @@ class SystemKpis:
     constrained_wc_avg_utilization: dict[int, float] = field(default_factory=dict)
     constrained_wc_ending_backlog_hours: dict[int, float] = field(default_factory=dict)
     satisfied_from_inventory_units: float = 0.0
+    plant_avg_lead_time_days: float = float("nan")
 
 
 def compute_system_kpis(
@@ -124,6 +125,10 @@ def compute_system_kpis(
     routing_operations_df: pd.DataFrame,
     horizon: list[dt.date],
     avg_minutes_per_unit_by_wc: dict[int, float],
+    items_df: pd.DataFrame | None = None,
+    bom_headers_df: pd.DataFrame | None = None,
+    bom_components_df: pd.DataFrame | None = None,
+    lead_time_item_ids: list[int] | None = None,
 ) -> SystemKpis:
     ending_wip = sum(
         r.wip_qty for r in output.work_centre_results if r.period_start_date == horizon[-1]
@@ -150,15 +155,45 @@ def compute_system_kpis(
     completed_units_estimate = sum(completed_by_wc.values())
 
     wc_results_by_period = {(r.work_centre_id, r.period_start_date): r for r in output.work_centre_results}
-    lead_times = []
-    for period in horizon:
-        lt = compute_lead_time_for_item(lead_time_item_id, period, routing_headers_df, routing_operations_df, wc_results_by_period)
-        if lt is not None:
-            lead_times.append(lt.total_days)
+    if items_df is not None:
+        plant_items = items_df.loc[items_df["item_type"] == "FG", "item_id"].astype(int).tolist()
+    else:
+        plant_items = [lead_time_item_id]
+    cab_items = lead_time_item_ids or [lead_time_item_id]
 
-    avg_lt = float(np.mean(lead_times)) if lead_times else float("nan")
-    p90_lt = float(np.percentile(lead_times, 90)) if lead_times else float("nan")
-    p95_lt = float(np.percentile(lead_times, 95)) if lead_times else float("nan")
+    def demand_weighted_lead_time(item_ids: list[int]) -> tuple[float, list[tuple[float, float]]]:
+        weighted_sum = total_weight = 0.0
+        samples = []
+        for item_id in item_ids:
+            for period in horizon:
+                lt = compute_lead_time_for_item(item_id, period, routing_headers_df, routing_operations_df,
+                    wc_results_by_period, items_df, bom_headers_df, bom_components_df)
+                if lt is None:
+                    continue
+                rows = output.material_series(item_id)
+                weight = next((r.gross_requirement for r in rows if r.period_start_date == period), 0.0)
+                if weight > 0:
+                    weighted_sum += lt.total_days * weight
+                    total_weight += weight
+                    samples.append((lt.total_days, weight))
+        return (weighted_sum / total_weight if total_weight else float("nan")), samples
+
+    def weighted_percentile(samples: list[tuple[float, float]], percentile: float) -> float:
+        if not samples:
+            return float("nan")
+        ordered = sorted(samples)
+        threshold = sum(weight for _, weight in ordered) * percentile / 100.0
+        cumulative = 0.0
+        for value, weight in ordered:
+            cumulative += weight
+            if cumulative >= threshold:
+                return value
+        return ordered[-1][0]
+
+    avg_lt, lead_times = demand_weighted_lead_time(cab_items)
+    plant_avg_lt, _ = demand_weighted_lead_time(plant_items)
+    p90_lt = weighted_percentile(lead_times, 90)
+    p95_lt = weighted_percentile(lead_times, 95)
 
     constrained_util = {}
     constrained_backlog = {}
@@ -196,4 +231,5 @@ def compute_system_kpis(
         overdue_unmet_units_estimate=overdue_units, avg_lead_time_days=avg_lt,
         p90_lead_time_days=p90_lt, p95_lead_time_days=p95_lt, service_risk=service_risk,
         constrained_wc_avg_utilization=constrained_util, constrained_wc_ending_backlog_hours=constrained_backlog,
+        plant_avg_lead_time_days=plant_avg_lt,
     )

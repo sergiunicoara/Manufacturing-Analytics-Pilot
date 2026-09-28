@@ -15,6 +15,49 @@ from app.synthetic.timeline import REFERENCE_DATE
 HORIZON = [REFERENCE_DATE + dt.timedelta(weeks=w) for w in range(12)]
 
 
+def test_executive_story_lead_time_series_uses_subassembly_route_and_all_five_cases(tables):
+    import pytest
+    from app.analytics.period_engine import compute_lead_time_for_item
+    from app.analytics.scenario_demo import cab100_item_ids, run_four_intervention_comparison
+
+    cases = run_four_intervention_comparison(tables, HORIZON, demand_multiplier=1.4)
+    ids = cab100_item_ids(tables["items"])
+    series = {}
+    for case in ("BASELINE", "DEMAND_SHOCK_ONLY", "BUFFER_ONLY", "CAPACITY_ONLY", "COMBINED"):
+        output = cases[case]
+        state = {(r.work_centre_id, r.period_start_date): r for r in output.work_centre_results}
+        points = []
+        for period in HORIZON:
+            values = {key: 0.0 for key in ("processing_days", "queue_days", "transfer_days", "total_days")}
+            total_weight = 0.0
+            for item_id in ids:
+                lt = compute_lead_time_for_item(item_id, period, tables["routing_headers"],
+                    tables["routing_operations"], state, tables["items"], tables["bom_headers"], tables["bom_components"])
+                mr = next((r for r in output.material_series(item_id) if r.period_start_date == period), None)
+                weight = mr.gross_requirement if mr else 0.0
+                if lt is None or weight <= 0:
+                    continue
+                total_weight += weight
+                for key in values:
+                    values[key] += getattr(lt, key) * weight
+            points.append({key: value / total_weight if total_weight else 0.0 for key, value in values.items()})
+        assert len(points) == 12
+        series[case] = points
+    assert series["BASELINE"][0]["processing_days"] == pytest.approx(series["CAPACITY_ONLY"][0]["processing_days"])
+    assert any(p["queue_days"] > 0 for p in series["DEMAND_SHOCK_ONLY"])
+    intervention_index = HORIZON.index(cases["intervention_start_week"])
+    # Historical estimates before the intervention week are unchanged.
+    assert series["CAPACITY_ONLY"][:intervention_index] == series["DEMAND_SHOCK_ONLY"][:intervention_index]
+    assert sum(p["queue_days"] for p in series["CAPACITY_ONLY"][intervention_index + 1:]) < sum(
+        p["queue_days"] for p in series["DEMAND_SHOCK_ONLY"][intervention_index + 1:])
+    for points in series.values():
+        for point in points:
+            assert point["total_days"] == pytest.approx(point["processing_days"] + point["queue_days"] + point["transfer_days"])
+    print("EXECUTIVE STORY 12-WEEK DEMAND-WEIGHTED CAB-100 LEAD-TIME SERIES")
+    for case, points in series.items():
+        print(case, [(round(p["processing_days"], 2), round(p["queue_days"], 2), round(p["transfer_days"], 2), round(p["total_days"], 2)) for p in points])
+
+
 def test_cab100_plus_40_percent_increases_welding_load_and_never_decreases_it(tables):
     results = run_golden_scenarios(tables, HORIZON)
     baseline = results["baseline"]

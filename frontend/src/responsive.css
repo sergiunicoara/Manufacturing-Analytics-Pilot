@@ -1,0 +1,12 @@
+@media(max-width:700px){
+  .sidebar{padding:12px;height:auto}
+  .brand{padding:0 3px 10px}
+  .brand strong{font-size:12px}
+  .brand small,.nav-caption,.side-foot{display:none}
+  .sidebar nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:thin}
+  .sidebar nav button{flex:0 0 auto;width:auto;white-space:nowrap;padding:8px 10px}
+  .sidebar .story-link{width:auto;padding:8px 10px;margin-top:7px}
+  .topbar{height:48px}
+  .dashboard-header{padding:22px 0}
+  .plot{height:300px}
+}

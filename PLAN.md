@@ -360,6 +360,37 @@ recommendation engine (constraint-aware per CORR-6), FastAPI analytics API
 with **Evidence Drawer payloads on every endpoint (CORR-9)**, React + Plotly
 frontend with the reusable `<EvidenceDrawer>` component across all 9 pages.
 
+**Executive Story demo calibration (CP4):** use a 12-week presentation horizon
+to include the demand shock and the full intervention response while keeping the
+story focused. The original 16-week calibration showed baseline lead time rising
+from 5.7 to 13.0 days over weeks 13–16, inspection becoming persistently
+constrained from week 12, and packaging briefly constrained in week 10. The
+corrected BOM-path series now shows baseline deterioration within the 12-week
+view too, so it is shown and labeled rather than presented as a stable control.
+There is no horizon that both ends before baseline deterioration and includes
+the intervention response; a genuinely stable-control story would require
+recalibrating the underlying demand/capacity data. The analytical engine still
+accepts the configured 26-week horizon.
+
+**Lead-time method correction:** estimate an FG's route as its own routing plus
+the longest manufactured subassembly branch in its effective-dated BOM. Keep
+processing, queue, transfer, and total days separate. Processing uses the
+routing standard (setup amortized over batch plus run time, scaled by BOM
+quantity). Congestion queue uses the work-centre backlog at period entry divided
+by effective hours per operating workday; convert that workday wait to calendar
+days using the centre's operating days/week before adding it to routing processing
+and transfer calendar days. Therefore an intervention cannot rewrite earlier
+periods, and downstream welding affects finished-good lead time through its
+subassembly path.
+
+**Welding capacity translation:** express each multiplier against the actual
+calendar. Work centre 9 is scheduled for 1 shift/day × 8 hours × 5 days = 40
+scheduled hours/week. A 2.5× effective-capacity target is equivalent to adding
+60 scheduled hours/week at unchanged availability: one additional full 8-hour
+shift/day plus 4 extra hours/day over the five operating days. This is only a
+calendar arithmetic translation; staffing, equipment, maintenance, and safety
+feasibility require plant validation.
+
 **CP5 — AI copilot + story mode + docs + polish**: copilot endpoint with
 **insufficient-evidence gate (CORR-10)**, executive story mode, full test
 suite pass (including **tolerance-based reproducibility per CORR-11**), all

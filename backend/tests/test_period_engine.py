@@ -18,7 +18,7 @@ import pandas as pd
 import pytest
 
 from app.analytics.blocking import BlockingIndex
-from app.analytics.period_engine import run_period_engine
+from app.analytics.period_engine import compute_lead_time_for_item, run_period_engine
 
 MONDAY = dt.date(2026, 1, 5)
 
@@ -89,6 +89,95 @@ def mini_plant(n_weeks: int, steel_initial_inventory: float = 100000.0, steel_re
 def required_hours_for_qty(qty: float) -> float:
     batches = math.ceil(qty / 10)
     return (60 * batches + 10 * qty) / 60.0
+
+
+def lead_times(output, plant):
+    by_period = {(r.work_centre_id, r.period_start_date): r for r in output.work_centre_results}
+    return [compute_lead_time_for_item(1, period, plant["routing_headers_df"],
+             plant["routing_operations_df"], by_period, plant["items_df"],
+             plant["bom_headers_df"], plant["bom_components_df"]) for period in plant["horizon"]]
+
+
+def test_capacity_changes_queue_not_intrinsic_processing_time():
+    plant = mini_plant(5)
+    demand = {w: {1: 160.0} for w in plant["horizon"]}
+    base = run_period_engine(top_level_demand=demand, **plant)
+    improved = run_period_engine(top_level_demand=demand,
+        capacity_multiplier_by_work_centre={1: (3.0, plant["horizon"][3])}, **plant)
+    b, c = lead_times(base, plant), lead_times(improved, plant)
+    assert all(x.processing_days == pytest.approx(b[0].processing_days) for x in c)
+    assert c[:3] == b[:3]  # every pre-intervention estimate remains bit-identical
+    base_wc, improved_wc = base.wc_series(1), improved.wc_series(1)
+    assert improved_wc[3].effective_hours > base_wc[3].effective_hours
+    assert improved_wc[3].backlog_hours_at_entry == pytest.approx(base_wc[3].backlog_hours_at_entry)
+    assert improved_wc[4].backlog_hours_at_entry < base_wc[4].backlog_hours_at_entry
+    assert c[3].queue_days < b[3].queue_days
+
+
+def test_lead_time_uses_entry_backlog_and_improves_after_backlog_drains():
+    plant = mini_plant(7)
+    demand = {w: {1: 160.0} for w in plant["horizon"][:3]}
+    demand.update({w: {1: 20.0} for w in plant["horizon"][3:]})
+    output = run_period_engine(top_level_demand=demand, **plant)
+    results = lead_times(output, plant)
+    assert results[3].queue_days > results[0].queue_days
+    assert results[-1].queue_days < results[3].queue_days
+    wc = output.wc_series(1)
+    assert results[3].queue_days == pytest.approx(
+        wc[3].base_queue_time_days + wc[3].backlog_hours_at_entry / wc[3].effective_hours_per_workday * 7 / wc[3].effective_days_per_week
+    )
+
+
+def test_buffer_only_does_not_change_processing_or_capacity_or_rewrite_history():
+    plant = mini_plant(5)
+    demand = {w: {1: 160.0} for w in plant["horizon"]}
+    base = run_period_engine(top_level_demand=demand, **plant)
+    buffered = run_period_engine(top_level_demand=demand, buffer_boost_by_item={1: 500.0}, **plant)
+    b, c = lead_times(base, plant), lead_times(buffered, plant)
+    assert [x.processing_days for x in b] == pytest.approx([x.processing_days for x in c])
+    assert [r.effective_hours for r in base.wc_series(1)] == pytest.approx([r.effective_hours for r in buffered.wc_series(1)])
+    assert b[0].queue_days == pytest.approx(c[0].queue_days)
+    assert b[0].total_days == pytest.approx(c[0].total_days)  # historical lead time is immutable
+    assert c[-1].queue_days < b[-1].queue_days  # it reduces queued work through netting, not through faster processing
+
+
+def test_lead_time_components_keep_transfer_distinct_from_queue():
+    plant = mini_plant(1)
+    out = run_period_engine(top_level_demand={plant["horizon"][0]: {1: 20.0}}, **plant)
+    lt = lead_times(out, plant)[0]
+    assert lt.processing_days == pytest.approx((60 / 10 + 10) / 1440)
+    assert lt.transfer_days == pytest.approx(30 / 1440)
+    assert lt.queue_days == pytest.approx(120 / 1440)
+    assert lt.total_days == pytest.approx(lt.processing_days + lt.queue_days + lt.transfer_days)
+
+
+def test_lead_time_follows_routed_subassembly_and_converts_workdays_to_calendar_days():
+    plant = mini_plant(3)
+    plant["items_df"] = pd.concat([plant["items_df"], pd.DataFrame([{
+        "item_id": 3, "item_code": "WELDED-FRAME", "description": "Frame", "item_type": "SUBASSY",
+        "uom": "PC", "product_family": None, "is_active": True,
+    }])], ignore_index=True)
+    plant["bom_components_df"] = pd.concat([plant["bom_components_df"], pd.DataFrame([{
+        "bom_component_id": 2, "bom_id": 1, "component_item_id": 3, "quantity_per": 1.0,
+        "scrap_pct": 0.0, "effective_from": dt.date(2020, 1, 1), "effective_to": None,
+    }])], ignore_index=True)
+    plant["routing_headers_df"] = pd.concat([plant["routing_headers_df"], pd.DataFrame([{
+        "routing_id": 2, "item_id": 3, "revision": "A", "effective_from": dt.date(2020, 1, 1), "effective_to": None,
+    }])], ignore_index=True)
+    plant["routing_operations_df"] = pd.concat([plant["routing_operations_df"], pd.DataFrame([{
+        "routing_operation_id": 2, "routing_id": 2, "seq_no": 1, "work_centre_id": 2,
+        "operation_name": "Welding", "setup_time_minutes": 120.0, "run_time_minutes_per_unit": 60.0,
+        "queue_time_minutes": 60.0, "transfer_time_minutes": 30.0, "yield_pct": 1.0, "batch_size": 2,
+    }])], ignore_index=True)
+    out = run_period_engine(top_level_demand={plant["horizon"][0]: {1: 1.0}}, **plant)
+    by_period = {(r.work_centre_id, r.period_start_date): r for r in out.work_centre_results}
+    lt = compute_lead_time_for_item(1, plant["horizon"][0], plant["routing_headers_df"],
+        plant["routing_operations_df"], by_period, plant["items_df"], plant["bom_headers_df"], plant["bom_components_df"])
+    assert lt.route_item_ids == (1, 3)
+    assert lt.processing_days > (60 / 10 + 10) / 1440
+    welded = out.wc_series(2)[0]
+    # The base one-hour queue is calendar time; congestion converts workdays to calendar days.
+    assert lt.queue_days >= welded.base_queue_time_days
 
 
 # ============================================================

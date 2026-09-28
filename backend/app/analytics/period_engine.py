@@ -81,6 +81,10 @@ class WorkCentrePeriodResult:
     completed_hours: float  # [CP3.2] hours of work actually processed this period -- see reconciliation.py
     wip_qty: float
     queue_time_days: float
+    backlog_hours_at_entry: float
+    effective_hours_per_workday: float
+    effective_days_per_week: float
+    base_queue_time_days: float
     constraint_classification: str
     excluded_routing_operation_ids: list[int] = field(default_factory=list)
 
@@ -199,6 +203,7 @@ def run_period_engine(
 
     items_by_id = items_df.set_index("item_id")
     process_type_by_wc = work_centres_df.set_index("work_centre_id")["process_type"].to_dict()
+    workdays_by_wc = work_centres_df.set_index("work_centre_id")["days_per_week"].to_dict()
     base_queue_days = _base_queue_time_days_by_work_centre(routing_operations_df)
     avg_minutes_per_unit = _avg_minutes_per_unit_by_work_centre(routing_operations_df)
     receipts_by_item_period = _bucket_receipts_by_item_period(purchase_order_lines_df, horizon)
@@ -308,10 +313,14 @@ def run_period_engine(
             if math.isnan(cap.utilization_pct):
                 backlog_end = backlog_start  # unreliable capacity data this period — carry state, don't corrupt it
                 queue_time_days = float("nan")
+                effective_hours_per_workday = float("nan")
+                operating_days = max(float(workdays_by_wc.get(wc_id, 5) or 5), 1.0)
                 completed_hours = float("nan")
             else:
                 backlog_end = max(0.0, backlog_start + required_hours - cap.effective_hours)
                 queue_time_days = base_queue_days.get(wc_id, 0.0) + backlog_end / (cap.effective_hours / 7.0)
+                operating_days = max(float(workdays_by_wc.get(wc_id, 5) or 5), 1.0)
+                effective_hours_per_workday = cap.effective_hours / operating_days
                 # [CP3.2] Flow-conservation identity (see analytics/reconciliation.py):
                 # required_hours + backlog_start = completed_hours + backlog_end,
                 # i.e. completed_hours = min(effective_hours, backlog_start + required_hours).
@@ -334,6 +343,10 @@ def run_period_engine(
                 utilization_pct=cap.utilization_pct, backlog_hours_start=backlog_start,
                 backlog_hours_end=backlog_end, completed_hours=completed_hours, wip_qty=wip_qty,
                 queue_time_days=queue_time_days,
+                backlog_hours_at_entry=backlog_start,
+                effective_hours_per_workday=effective_hours_per_workday,
+                effective_days_per_week=operating_days,
+                base_queue_time_days=base_queue_days.get(wc_id, 0.0),
                 constraint_classification=classification, excluded_routing_operation_ids=cap.excluded_routing_operation_ids,
             ))
 
@@ -346,49 +359,17 @@ def run_period_engine(
     return output
 
 
-@dataclass
-class LeadTimeResult:
-    item_id: int
-    period_start_date: dt.date
-    processing_days: float
-    queue_days: float
-    transfer_days: float
-    total_days: float
-
-
 def compute_lead_time_for_item(
     item_id: int,
     period_start_date: dt.date,
     routing_headers_df: pd.DataFrame,
     routing_operations_df: pd.DataFrame,
     wc_results_by_period: dict[tuple[int, dt.date], WorkCentrePeriodResult],
-) -> LeadTimeResult | None:
-    """Sums processing + queue + transfer time across an item's routing
-    sequence for one period, using that period's actual queue_time_days per
-    work centre from the engine output — not a separate static estimate."""
-    routing_row = routing_headers_df.loc[routing_headers_df["item_id"] == item_id]
-    if routing_row.empty:
-        return None
-    routing_id = routing_row.iloc[0]["routing_id"]
-    ops = routing_operations_df.loc[routing_operations_df["routing_id"] == routing_id].sort_values("seq_no")
-
-    processing_days = queue_days = transfer_days = 0.0
-    for _, op in ops.iterrows():
-        setup = op["setup_time_minutes"] or 0.0
-        run = op["run_time_minutes_per_unit"] or 0.0
-        batch = max(1, int(op["batch_size"]))
-        processing_minutes = (setup / batch) + run
-        processing_days += processing_minutes / 1440.0
-        transfer_days += (op["transfer_time_minutes"] or 0.0) / 1440.0
-
-        wc_id = op["work_centre_id"]
-        if pd.notna(wc_id):
-            wc_result = wc_results_by_period.get((int(wc_id), period_start_date))
-            if wc_result is not None and not math.isnan(wc_result.queue_time_days):
-                queue_days += wc_result.queue_time_days
-
-    return LeadTimeResult(
-        item_id=item_id, period_start_date=period_start_date,
-        processing_days=processing_days, queue_days=queue_days, transfer_days=transfer_days,
-        total_days=processing_days + queue_days + transfer_days,
-    )
+    items_df: pd.DataFrame | None = None,
+    bom_headers_df: pd.DataFrame | None = None,
+    bom_components_df: pd.DataFrame | None = None,
+):
+    """Delegate to BOM-aware lead-time path model; queue workdays convert to calendar days."""
+    from app.analytics.leadtime import compute_lead_time_for_item as compute
+    return compute(item_id, period_start_date, routing_headers_df, routing_operations_df,
+                   wc_results_by_period, items_df, bom_headers_df, bom_components_df)

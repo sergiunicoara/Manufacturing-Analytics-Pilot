@@ -71,7 +71,8 @@ def main() -> None:
     for period in horizon:
         total_backlog = sum(r.backlog_hours_end for r in baseline.work_centre_results if r.period_start_date == period)
         total_wip = sum(r.wip_qty for r in baseline.work_centre_results if r.period_start_date == period)
-        lt = compute_lead_time_for_item(lead_time_item, period, tables["routing_headers"], tables["routing_operations"], wc_results_by_period)
+        lt = compute_lead_time_for_item(lead_time_item, period, tables["routing_headers"], tables["routing_operations"], wc_results_by_period,
+            tables["items"], tables["bom_headers"], tables["bom_components"])
         trend_rows.append({
             "week": period, "total_backlog_hours": round(total_backlog, 1), "total_wip_qty": round(total_wip, 1),
             "cab100_lead_time_days": round(lt.total_days, 2) if lt else None,
@@ -137,12 +138,15 @@ def main() -> None:
             lead_time_item_id=lead_time_item, routing_headers_df=tables["routing_headers"],
             routing_operations_df=tables["routing_operations"], horizon=horizon,
             avg_minutes_per_unit_by_wc=avg_minutes_per_unit,
+            items_df=tables["items"], bom_headers_df=tables["bom_headers"], bom_components_df=tables["bom_components"],
+            lead_time_item_ids=cab100_ids,
         )
         kpi_rows.append({
             "case": label, "completed_units_est": round(kpis.completed_units_estimate, 1),
             "ending_wip": round(kpis.ending_system_wip, 1), "ending_backlog_h": round(kpis.ending_total_backlog_hours, 1),
             "overdue_units_est": round(kpis.overdue_unmet_units_estimate, 1),
             "avg_lead_time_d": round(kpis.avg_lead_time_days, 2) if kpis.avg_lead_time_days == kpis.avg_lead_time_days else None,
+            "plant_avg_lead_time_d": round(kpis.plant_avg_lead_time_days, 2) if kpis.plant_avg_lead_time_days == kpis.plant_avg_lead_time_days else None,
             "p90_lead_time_d": round(kpis.p90_lead_time_days, 2) if kpis.p90_lead_time_days == kpis.p90_lead_time_days else None,
             "p95_lead_time_d": round(kpis.p95_lead_time_days, 2) if kpis.p95_lead_time_days == kpis.p95_lead_time_days else None,
             "service_risk": kpis.service_risk,

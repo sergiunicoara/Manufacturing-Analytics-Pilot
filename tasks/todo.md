@@ -109,10 +109,24 @@
       destroy-demand, per-WC intervention sizing, system KPI service-risk
       classification), 84 total passing
 
-## Next (CP4, per PLAN.md)
+## CP4 — COMPLETE
 
-- [ ] Scenario engine: baseline/buffer-only/capacity-only/combined via
-      period_engine.py, persisted under scenario_runs
-- [ ] Buffer recommendation engine (constraint-aware per CORR-6)
-- [ ] FastAPI analytics API with Evidence Drawer payloads (CORR-9)
-- [ ] React + Plotly frontend, 9 dashboard pages
+- [x] Reference baseline, shock, buffer, capacity, and combined scenarios
+      persisted with parameters and seed; custom runs append results.
+- [x] Constraint-gated analytical buffer recommendations with demand CV,
+      realized forecast error, utilization, assumptions, and evidence.
+- [x] Nine FastAPI page read models with evidence on metrics, chart points,
+      and rows; SQL NULL preserves unknown KPI-blocked period results.
+- [x] React and Plotly dashboard with all nine pages, scenario controls,
+      responsive navigation, and reusable Evidence Drawer.
+
+## CP5 — COMPLETE
+
+- [x] Evidence-gated copilot with deterministic KPI, recommendation, DQ,
+      and scenario tools; optional Anthropic prose and raw-evidence fallback.
+- [x] Executive Story sequence and five-case Plotly lead-time chart with
+      processing/queue/transfer decomposition and calendar translation.
+- [x] Ten project docs plus `PILOT_FINDINGS.md` from live SQL-backed results,
+      with Mermaid architecture and data-model diagrams.
+- [x] Focused CP4/CP5 tests, full backend suite, frontend build, and live
+      API/browser verification.
