@@ -1,0 +1,53 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mfg_pilot_sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-DevOnly_ChangeMe_123!}
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD:-DevOnly_ChangeMe_123!}\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  api:
+    build:
+      context: ./backend
+    container_name: mfg_pilot_api
+    environment:
+      MSSQL_HOST: sqlserver
+      MSSQL_PORT: 1433
+      MSSQL_DATABASE: ${MSSQL_DATABASE:-mfg_analytics_pilot}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-DevOnly_ChangeMe_123!}
+      SYNTHETIC_DATA_SEED: ${SYNTHETIC_DATA_SEED:-42}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    volumes:
+      - ./staging:/app/staging
+      - ./db/ddl:/app/db/ddl:ro
+      - ./scripts:/app/scripts:ro
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: mfg_pilot_frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  sqlserver_data:

@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+node_modules/
+frontend/dist/
+staging/*.csv
+staging/*.parquet
+staging/dq_issue_manifest.json
+.env
+*.log
+.DS_Store
