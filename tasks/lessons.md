@@ -1,5 +1,13 @@
 # Lessons
 
+## 2026-09-28 — CP3 self-caught bugs and a design refinement
+
+1. **Same root cause as CP2's NaT lesson, different symptom.** `capacity_calendar_df["week_start_date"] == pd.Timestamp(period_start_date)` is silently always False when the column holds plain `datetime.date` (in-memory generator context) rather than `pd.Timestamp` (DB-loaded) — `date == Timestamp` doesn't raise, it just never matches. This produced NaN capacity for *every* period in a test run against in-memory tables, which masked as "backlog never accumulates" rather than an obvious crash. Fix: normalize both sides via `pd.to_datetime(...).dt.date` before comparing, every time a date/Timestamp-typed column might come from either source. **Generalized rule**: any date/Timestamp comparison must normalize first — this is now the second time it's bitten a different function.
+2. **`NaN` and `0.0` are different "this value is unusable" signals and conflating them causes a crash, not a wrong answer.** `effective_hours` can legitimately be a real `0.0` (a zero_capacity_weeks KPI_BLOCKING defect) without being `NaN` (a missing calendar row). Gating a division on `math.isnan(effective_hours)` alone let a real zero slip through to a `ZeroDivisionError`. Fix: gate on the *already-computed* unreliability signal (`utilization_pct` being NaN, which `compute_capacity` sets for both cases) rather than re-deriving reliability from a raw input field in a second place.
+3. **A formula sketched at the design stage can turn out to be un-implementable as specified, and that's a legitimate mid-build discovery, not a failure to plan.** PLAN.md's CORR-1 called for a bounded curve below a utilization threshold and backlog accumulation above it. Implementing continuity verification (CP3 req. 8) showed the two formulas measure different things near the seam and cannot be made continuous by construction. Replaced with one unified always-stateful backlog formula, documented at length in period_engine.py's module docstring and reported as a deviation rather than silently diverging from the approved plan.
+
+**How to apply going forward**: when a plan-approved formula has a threshold/seam between two different mathematical regimes, treat "prove continuity at the seam" as a task to do *during design*, not just when explicitly asked — if the two sides can't be shown continuous on paper, the seam is a bug waiting to be found, not a detail to fix later.
+
 ## 2026-09-28 — CP2 self-caught bugs (verification against real DB, not just fixtures)
 
 Two bugs only surfaced when running against SQL-Server-loaded data, not

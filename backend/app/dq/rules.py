@@ -42,6 +42,11 @@ def rule_missing_routing_times(tables) -> list[Finding]:
             rule_id="missing_routing_times", entity="routing_operations",
             record_id=str(row["routing_operation_id"]), severity="HIGH",
             classification="BLOCKING", origin="INJECTED", manifest_key="missing_routing_times",
+            # KPI_BLOCKING, not ENTITY_BLOCKING: this operation's own load
+            # contribution is unusable, but the item still exists and other
+            # operations/items/work-centres are unaffected.
+            impact_scope="KPI_BLOCKING", affected_entity_type="routing_operation",
+            affected_entity_id=str(row["routing_operation_id"]),
             description=f"Routing operation is missing {', '.join(missing)}, so capacity/lead-time "
                         "load cannot be computed for it without assuming a value.",
             detected_value="NULL", expected_constraint="setup_time_minutes AND run_time_minutes_per_unit NOT NULL",
@@ -53,11 +58,17 @@ def rule_missing_routing_times(tables) -> list[Finding]:
 
 def rule_orphan_bom_components(tables) -> list[Finding]:
     orphans = find_orphan_bom_components(tables["items"], tables["bom_components"])
+    bom_id_to_parent = tables["bom_headers"].set_index("bom_id")["parent_item_id"].to_dict()
     return [
         Finding(
             rule_id="orphan_bom_components", entity="bom_components",
             record_id=str(row["bom_component_id"]), severity="HIGH",
             classification="BLOCKING", origin="INJECTED", manifest_key="orphan_bom_components",
+            # ENTITY_BLOCKING scoped to the PARENT item whose branch is
+            # unresolvable — sibling components of the same parent, and every
+            # other item's BOM, are unaffected.
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="item",
+            affected_entity_id=str(bom_id_to_parent.get(row["bom_id"], "UNKNOWN")),
             description=f"BOM component references component_item_id={row['component_item_id']}, "
                         "which does not exist in items.",
             detected_value=str(row["component_item_id"]), expected_constraint="component_item_id IN items.item_id",
@@ -108,6 +119,7 @@ def rule_negative_inventory(tables) -> list[Finding]:
         Finding(
             rule_id="negative_inventory", entity="inventory", record_id=str(row["inventory_id"]),
             severity="HIGH", classification="BLOCKING", origin="INJECTED", manifest_key="negative_inventory",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="item", affected_entity_id=str(row["item_id"]),
             description=f"Inventory snapshot has negative on_hand_qty={row['on_hand_qty']}.",
             detected_value=str(row["on_hand_qty"]), expected_constraint="on_hand_qty >= 0",
             recommended_action="Investigate the source transaction; excluded from usable inventory in "
@@ -123,6 +135,7 @@ def rule_overlapping_bom_revisions(tables) -> list[Finding]:
         Finding(
             rule_id="overlapping_bom_revisions", entity="bom_headers", record_id=f"{bom_a},{bom_b}",
             severity="HIGH", classification="BLOCKING", origin="INJECTED", manifest_key="overlapping_bom_revisions",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="item", affected_entity_id=str(parent_item_id),
             description=f"Parent item {parent_item_id} has two BOM revisions (bom_id {bom_a} and "
                         f"{bom_b}) with overlapping effective-date windows.",
             detected_value=f"bom_id {bom_a}, {bom_b}", expected_constraint="non-overlapping effective windows per parent item",
@@ -141,6 +154,8 @@ def rule_missing_work_centre_mappings(tables) -> list[Finding]:
             rule_id="missing_work_centre_mappings", entity="routing_operations",
             record_id=str(row["routing_operation_id"]), severity="HIGH",
             classification="BLOCKING", origin="INJECTED", manifest_key="missing_work_centre_mappings",
+            impact_scope="KPI_BLOCKING", affected_entity_type="routing_operation",
+            affected_entity_id=str(row["routing_operation_id"]),
             description="Routing operation has no work_centre_id mapping, so it cannot be included "
                         "in capacity/utilization calculations.",
             detected_value="NULL", expected_constraint="work_centre_id NOT NULL",
@@ -160,6 +175,8 @@ def rule_forecasts_without_customers(tables) -> list[Finding]:
             rule_id="forecasts_without_customers", entity="customer_forecasts",
             record_id=str(row["forecast_id"]), severity="MEDIUM",
             classification="BLOCKING", origin="INJECTED", manifest_key="forecasts_without_customers",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="forecast_record",
+            affected_entity_id=str(row["forecast_id"]),
             description=f"Forecast references customer_id={row['customer_id']}, which does not exist.",
             detected_value=str(row["customer_id"]), expected_constraint="customer_id IN customers.customer_id",
             recommended_action="Cannot attribute this forecast to a customer for consumption/accuracy "
@@ -180,6 +197,8 @@ def rule_production_orders_without_routing(tables) -> list[Finding]:
             rule_id="production_orders_without_routing", entity="production_orders",
             record_id=str(row["production_order_id"]), severity="HIGH",
             classification="BLOCKING", origin="INJECTED", manifest_key="production_orders_without_routing",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="production_order",
+            affected_entity_id=str(row["production_order_id"]),
             description="Production order has no routing_id, so lead-time/capacity load cannot be "
                         "computed for it.",
             detected_value="NULL", expected_constraint="routing_id NOT NULL and valid",
@@ -190,6 +209,8 @@ def rule_production_orders_without_routing(tables) -> list[Finding]:
             rule_id="production_orders_without_routing", entity="production_orders",
             record_id=str(row["production_order_id"]), severity="HIGH",
             classification="BLOCKING", origin="INJECTED", manifest_key="production_orders_without_routing",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="production_order",
+            affected_entity_id=str(row["production_order_id"]),
             description=f"Production order references routing_id={row['routing_id']}, which does not exist.",
             detected_value=str(row["routing_id"]), expected_constraint="routing_id IN routing_headers.routing_id",
             recommended_action="Resolve the correct routing; treated as blocked until corrected.",
@@ -224,6 +245,11 @@ def rule_zero_capacity_weeks(tables) -> list[Finding]:
             rule_id="zero_capacity_weeks", entity="capacity_calendar",
             record_id=str(row["capacity_calendar_id"]), severity="HIGH",
             classification="BLOCKING", origin="INJECTED", manifest_key="zero_capacity_weeks",
+            # KPI_BLOCKING scoped to this one work-centre-week's utilization
+            # KPI — other weeks for this work centre, and every other work
+            # centre, are unaffected.
+            impact_scope="KPI_BLOCKING", affected_entity_type="work_centre_period",
+            affected_entity_id=f"{row['work_centre_id']}:{row['week_start_date']}",
             description=f"Work centre {row['work_centre_id']} shows zero effective capacity for week "
                         f"{row['week_start_date']}.",
             detected_value="0", expected_constraint="effective_hours > 0 (unless a genuine planned shutdown)",
@@ -280,6 +306,12 @@ def rule_bom_cycle_detected(tables) -> list[Finding]:
         Finding(
             rule_id="bom_cycle_detected", entity="bom_components", record_id="->".join(str(i) for i in cycle),
             severity="CRITICAL", classification="BLOCKING", origin="ORGANIC",
+            # ENTITY_BLOCKING per item on the cycle -- every item on this
+            # cycle has its own branch blocked; items elsewhere in the BOM
+            # forest are unaffected. affected_entity_id lists all of them
+            # since the whole cycle is one connected defect.
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="item",
+            affected_entity_id=",".join(str(i) for i in cycle),
             description=f"BOM structure contains a cycle: {' -> '.join(str(i) for i in cycle)}.",
             detected_value=str(cycle), expected_constraint="BOM graph must be acyclic",
             recommended_action="BOM explosion cannot terminate through this branch; break the cycle at "
@@ -291,11 +323,14 @@ def rule_bom_cycle_detected(tables) -> list[Finding]:
 
 def rule_non_positive_bom_quantity(tables) -> list[Finding]:
     df = tables["bom_components"]
+    bom_id_to_parent = tables["bom_headers"].set_index("bom_id")["parent_item_id"].to_dict()
     mask = df["quantity_per"] <= 0
     return [
         Finding(
             rule_id="non_positive_bom_quantity", entity="bom_components", record_id=str(row["bom_component_id"]),
             severity="HIGH", classification="BLOCKING", origin="ORGANIC",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="item",
+            affected_entity_id=str(bom_id_to_parent.get(row["bom_id"], "UNKNOWN")),
             description=f"quantity_per={row['quantity_per']} is not positive.",
             detected_value=str(row["quantity_per"]), expected_constraint="quantity_per > 0",
             recommended_action="Correct the BOM quantity; a non-positive quantity would corrupt "
@@ -307,11 +342,14 @@ def rule_non_positive_bom_quantity(tables) -> list[Finding]:
 
 def rule_invalid_scrap_pct(tables) -> list[Finding]:
     df = tables["bom_components"]
+    bom_id_to_parent = tables["bom_headers"].set_index("bom_id")["parent_item_id"].to_dict()
     mask = (df["scrap_pct"] < 0) | (df["scrap_pct"] >= 1)
     return [
         Finding(
             rule_id="invalid_scrap_pct", entity="bom_components", record_id=str(row["bom_component_id"]),
             severity="HIGH", classification="BLOCKING", origin="ORGANIC",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="item",
+            affected_entity_id=str(bom_id_to_parent.get(row["bom_id"], "UNKNOWN")),
             description=f"scrap_pct={row['scrap_pct']} is outside the valid [0, 1) range.",
             detected_value=str(row["scrap_pct"]), expected_constraint="0 <= scrap_pct < 1",
             recommended_action="Correct the scrap percentage; a value >= 1 makes the scrap-adjusted "
@@ -328,6 +366,8 @@ def rule_invalid_batch_size(tables) -> list[Finding]:
         Finding(
             rule_id="invalid_batch_size", entity="routing_operations", record_id=str(row["routing_operation_id"]),
             severity="HIGH", classification="BLOCKING", origin="ORGANIC",
+            impact_scope="KPI_BLOCKING", affected_entity_type="routing_operation",
+            affected_entity_id=str(row["routing_operation_id"]),
             description=f"batch_size={row['batch_size']} is not positive.",
             detected_value=str(row["batch_size"]), expected_constraint="batch_size > 0",
             recommended_action="Correct the batch size; capacity math divides setup time by batch size.",
@@ -343,6 +383,8 @@ def rule_invalid_yield_pct(tables) -> list[Finding]:
         Finding(
             rule_id="invalid_yield_pct", entity="routing_operations", record_id=str(row["routing_operation_id"]),
             severity="HIGH", classification="BLOCKING", origin="ORGANIC",
+            impact_scope="KPI_BLOCKING", affected_entity_type="routing_operation",
+            affected_entity_id=str(row["routing_operation_id"]),
             description=f"yield_pct={row['yield_pct']} is outside the valid (0, 1] range.",
             detected_value=str(row["yield_pct"]), expected_constraint="0 < yield_pct <= 1",
             recommended_action="Correct the yield percentage; a non-positive yield makes required "
@@ -376,6 +418,8 @@ def rule_invalid_date_ordering(tables) -> list[Finding]:
         findings.append(Finding(
             rule_id="invalid_date_ordering", entity="production_orders", record_id=str(row["production_order_id"]),
             severity="HIGH", classification="BLOCKING", origin="ORGANIC",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="production_order",
+            affected_entity_id=str(row["production_order_id"]),
             description="planned_finish precedes planned_start.",
             detected_value=f"{row['planned_start']} .. {row['planned_finish']}",
             expected_constraint="planned_finish >= planned_start",
@@ -388,6 +432,8 @@ def rule_invalid_date_ordering(tables) -> list[Finding]:
         findings.append(Finding(
             rule_id="invalid_date_ordering", entity="production_orders", record_id=str(row["production_order_id"]),
             severity="HIGH", classification="BLOCKING", origin="ORGANIC",
+            impact_scope="ENTITY_BLOCKING", affected_entity_type="production_order",
+            affected_entity_id=str(row["production_order_id"]),
             description="actual_finish precedes actual_start.",
             detected_value=f"{row['actual_start']} .. {row['actual_finish']}",
             expected_constraint="actual_finish >= actual_start",

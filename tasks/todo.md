@@ -29,9 +29,40 @@
       effective-date selection, scrap/yield propagation, netting exclusion/
       timing/shortage, DQ rule cross-check vs. manifest (29 tests total)
 
-## Next (CP3, per PLAN.md)
+## Next (CP3, per PLAN.md) — COMPLETE
 
-- [ ] Forecast reconstruction + scoped consumption (CORR-3) + accuracy metrics
-- [ ] Three-tier capacity (CORR-5) wired into a real engine
-- [ ] period_engine.py: stateful, period-stepped backlog/WIP (CORR-1/2)
-- [ ] Constraint classification (CORR-6)
+- [x] Forecast reconstruction (every revision preserved) + scoped consumption
+      (CORR-3, non-double-counting proven) + accuracy metrics (WAPE headline,
+      zero-demand-robust, horizon buckets)
+- [x] Three-tier capacity (CORR-5) wired into a real engine, KPI_BLOCKING-aware
+- [x] period_engine.py: stateful, period-stepped backlog/WIP (CORR-1/2) —
+      unified continuous queue/backlog formula (replaces the original
+      piecewise CORR-1 sketch; see PLAN.md deviation note)
+- [x] Constraint classification (CORR-6): NONE/OVERLOADED/CANDIDATE/PRIMARY,
+      demonstrated over time against both the synthetic mini-plant and real data
+- [x] DQ impact scoping (GLOBAL/ENTITY/KPI_BLOCKING) so one bad routing/item
+      doesn't invalidate unrelated products or work centres
+- [x] Period-aware material netting, state carried across periods
+- [x] Golden scenarios: CAB-100 +40% demand, welding +30% capacity intervention
+- [x] 26 new tests (mini-plant mechanics + real-dataset golden scenarios),
+      55 total passing
+
+## Known calibration gap (flagged for CP4/CP5, not an engine defect)
+
+Plant-wide demand currently outstrips capacity at almost every work centre
+within 2-3 weeks of the horizon (INSPECTION, a singleton line serving all 140
+FG variants, is the plant's actual PRIMARY_CONSTRAINT — not welding). The
+engine's cross-work-centre primary-constraint selection is verified correct;
+the *inputs* need calibration (likely: more inspection/packaging capacity,
+and/or a further demand reduction) before CP5's "plant currently appears
+healthy" executive story premise holds plant-wide. Do this pass when building
+the CP4/CP5 dashboard, where the baseline narrative can be tuned iteratively
+against the live charts.
+
+## Next (CP4, per PLAN.md)
+
+- [ ] Scenario engine: baseline/buffer-only/capacity-only/combined via
+      period_engine.py, persisted under scenario_runs
+- [ ] Buffer recommendation engine (constraint-aware per CORR-6)
+- [ ] FastAPI analytics API with Evidence Drawer payloads (CORR-9)
+- [ ] React + Plotly frontend, 9 dashboard pages

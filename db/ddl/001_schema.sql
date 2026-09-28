@@ -407,6 +407,18 @@ CREATE TABLE dq_findings (
     -- detection, which nothing in the generator deliberately creates).
     origin                    VARCHAR(20) NOT NULL DEFAULT 'ORGANIC', -- INJECTED / ORGANIC
     manifest_key              VARCHAR(60) NULL, -- key into dq_issue_manifest.json when origin = INJECTED
+    -- [CP3 req. 2] impact_scope: a BLOCKING finding does not, by default,
+    -- invalidate the whole plant-wide analysis. GLOBAL_BLOCKING (reserved —
+    -- no current rule triggers it) would; ENTITY_BLOCKING scopes to one
+    -- specific entity (an item's BOM branch, an inventory record, a
+    -- production order); KPI_BLOCKING scopes even narrower, to one specific
+    -- calculated KPI for one entity-period (e.g. one work centre's
+    -- utilization in one week), leaving that same entity's other KPIs and
+    -- every other entity unaffected. NULL for non-BLOCKING findings, where
+    -- the concept doesn't apply.
+    impact_scope              VARCHAR(20) NULL, -- GLOBAL_BLOCKING / ENTITY_BLOCKING / KPI_BLOCKING
+    affected_entity_type      VARCHAR(30) NULL, -- e.g. 'item', 'work_centre_period', 'production_order'
+    affected_entity_id        VARCHAR(60) NULL, -- the id (or composite key) the scope applies to
     description               NVARCHAR(500) NOT NULL,
     detected_value            NVARCHAR(200) NULL,
     expected_constraint       NVARCHAR(200) NULL,
@@ -416,6 +428,7 @@ CREATE TABLE dq_findings (
 CREATE INDEX ix_dq_findings_entity ON dq_findings(entity, record_id);
 CREATE INDEX ix_dq_findings_classification ON dq_findings(classification);
 CREATE INDEX ix_dq_findings_origin ON dq_findings(origin, manifest_key);
+CREATE INDEX ix_dq_findings_scope ON dq_findings(affected_entity_type, affected_entity_id, impact_scope);
 
 CREATE TABLE scenario_runs (
     run_id              INT IDENTITY(1,1) PRIMARY KEY,

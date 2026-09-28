@@ -19,6 +19,13 @@ class Finding:
     origin: str  # INJECTED / ORGANIC
     description: str
     manifest_key: str | None = None
+    # [CP3 req. 2] Only meaningful when classification == BLOCKING. See
+    # db/ddl/001_schema.sql's dq_findings.impact_scope comment for the full
+    # definition of each level. Every BLOCKING-producing rule below sets
+    # these three fields; non-BLOCKING findings leave them None.
+    impact_scope: str | None = None  # GLOBAL_BLOCKING / ENTITY_BLOCKING / KPI_BLOCKING
+    affected_entity_type: str | None = None
+    affected_entity_id: str | None = None
     detected_value: str | None = None
     expected_constraint: str | None = None
     recommended_action: str | None = None

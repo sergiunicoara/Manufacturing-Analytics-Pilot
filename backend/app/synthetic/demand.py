@@ -79,7 +79,14 @@ def generate_all(ctx: GenContext) -> None:
     for customer_id, item_id in streams:
         # Per-stream baseline level and mild trend/seasonality so different
         # streams look distinct rather than pure noise around one constant.
-        base_level = float(rng.uniform(20, 220))
+        # Calibrated (CP3) so that combined weekly demand across the ~28
+        # variants sharing a welding line lands baseline utilization in a
+        # credible 60-100% band, with room for a +40% demand scenario to
+        # push it into overload -- the original (20, 220) range produced a
+        # 3-12x welding overload even at baseline, which read as a broken
+        # generator rather than a "currently healthy plant" per the demo
+        # story's premise.
+        base_level = float(rng.uniform(5, 55))
         trend_per_week = float(rng.normal(0, base_level * 0.01))
         phase = float(rng.uniform(0, 2 * np.pi))
 
