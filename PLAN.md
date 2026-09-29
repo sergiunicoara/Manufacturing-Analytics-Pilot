@@ -385,11 +385,16 @@ subassembly path.
 
 **Welding capacity translation:** express each multiplier against the actual
 calendar. Work centre 9 is scheduled for 1 shift/day × 8 hours × 5 days = 40
-scheduled hours/week. A 2.5× effective-capacity target is equivalent to adding
-60 scheduled hours/week at unchanged availability: one additional full 8-hour
-shift/day plus 4 extra hours/day over the five operating days. This is only a
-calendar arithmetic translation; staffing, equipment, maintenance, and safety
-feasibility require plant validation.
+scheduled hours/week. Scheduled hours are shown separately from effective hours:
+at unchanged availability and efficiency, scheduled hours scale with the
+multiplier. The multiplier is **recomputed for the current 12-week horizon** by
+the per-work-centre recovery search (currently 1.10× for Welding 1, i.e. 44
+scheduled hours/week, +4 h/week or +0.8 h per operating day; see
+PILOT_FINDINGS.md). An earlier 16-week calibration selected 2.5× (100 scheduled
+hours/week, +60 h/week); that figure is a historical result of a different
+horizon and is not the current recommendation. Both are calendar arithmetic
+only; staffing, equipment, maintenance, downtime and safety feasibility require
+plant validation.
 
 **CP5 — AI copilot + story mode + docs + polish**: copilot endpoint with
 **insufficient-evidence gate (CORR-10)**, executive story mode, full test

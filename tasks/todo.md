@@ -173,8 +173,8 @@ Matrix: docs/REQUIREMENTS_COMPLETION_MATRIX.md. Fresh baseline: 95 tests pass.
 - Verified 2026-09-29T06:18Z: full suite 182 passed / 0 skipped; restore round trip; secured instance; least privilege
 - Note: read models live in db/migrations/100_read_models.sql; restore tool is app/db/restore.py (not scripts/restore/)
 ### Stage 5 — Verification + docs
-- [ ] Fix 2.5× wording (PLAN.md, LIMITATIONS.md); refresh PILOT_FINDINGS from live run
-- [ ] Full backend suite + `npm run build` + browser walkthrough; update matrix with commands/results
+- [x] Fix 2.5× wording (PLAN.md, LIMITATIONS.md); refresh PILOT_FINDINGS from live run
+- [x] Full backend suite + `npm run build` + browser walkthrough; update matrix with commands/results
 ### Stage 6 — Film (OUT OF SCOPE per user 2026-09-29: "leave the presentation part")
 - [ ] Update SCENES/SCRIPT/deck; capture real footage; captions; render 1080p/720p
       (BLOCKED externally: TTS key, licensed music)

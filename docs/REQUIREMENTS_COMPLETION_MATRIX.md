@@ -1,7 +1,7 @@
 # Requirements completion matrix
 
 Baseline review: 2026-09-29, working tree on `master` at `8894825` plus uncommitted film work (not modified by this review).
-Baseline at review start: 95 passed. **Latest full run: `docker exec -w /app mfg_pilot_api python -m pytest -q -rs` → 182 passed, 0 skipped, 661 s, 2026-09-29T06:18Z** (includes live SQL parity and least-privilege tests). Checkpoint labels and earlier test counts in `tasks/todo.md` are history, not evidence.
+Baseline at review start: 95 passed. **Final gate (2026-09-29, 06:45–06:47Z, after the last code change): `docker exec -w /app mfg_pilot_api python -m pytest -q -rs` → 182 passed, 0 skipped in 156 s** (includes live SQL parity and least-privilege tests); `npm run build` succeeded; browser check: all 12 pages and the Executive Story rendered with no errors, a custom scenario saved as run #14 (212.19 backlog h), the copilot answered a cost question with the `get_cost` tool and refused a nonexistent item. Checkpoint labels and earlier test counts in `tasks/todo.md` are history, not evidence.
 
 **Sources.** Group A: `PLAN.md`. Group B: analytical corrections approved during the build (period-entry lead time, BOM-path lead time, 12-week presentation horizon). Group C: additional ERP-pilot requirements from `docs/IMPLEMENT_REMAINING_PROMPT.md`. The original job description is only available as a paste in a previous session transcript; it is summarised there and not quoted here.
 
@@ -34,7 +34,7 @@ Baseline at review start: 95 passed. **Latest full run: `docker exec -w /app mfg
 | A21 | Executive Story with live numbers | `/story`, `/api/executive-story` | `test_golden_scenarios.py` | DONE | |
 | A22 | Reproducibility within tolerance (CORR-11) | tests | `test_synthetic_data_generation.py` | DONE | |
 | A23 | SQL tests: referential integrity, effective-date overlap | DQ rules; completeness checker relationships; SQL views | `test_sql_read_models.py` (live), `test_completeness.py` | DONE | |
-| A24 | 10 docs + PILOT_FINDINGS from actual results | root `*.md` | review | PARTIAL | `PLAN.md` and `LIMITATIONS.md` still state the 2.5× welding translation (C9) |
+| A24 | 10 docs + PILOT_FINDINGS from actual results | root `*.md`, `docs/` | review | DONE | Scenario figures re-verified against the running API on 2026-09-29 |
 
 ## B. Approved analytical corrections
 
@@ -55,6 +55,6 @@ Baseline at review start: 95 passed. **Latest full run: `docker exec -w /app mfg
 | C6 | DATA_REQUEST.md + checker; M3 mapping; adapters; INTEGRATION.md | DONE locally / EXTERNAL | Checker live: WARN 89/5/0. M3 names remain HYPOTHESIS until client schema or vendor docs (EXTERNAL) |
 | C7 | T-SQL read models + parity; restore runbook + round trip | DONE | 6 views, parity passed; round trip into `pilot_restore_check_20260929`: 30 tables, 87,205 rows, 6 views, 40 FKs identical; overwrite refused |
 | C8 | Secured profile, API auth, least privilege, SECURITY.md, LLM opt-in | DONE locally / EXTERNAL | Live secured instance verified (401/403/200); pilot_reader / pilot_app grants verified; EU hosting, TLS, TDE, DPA are EXTERNAL |
-| C9 | Reporting fixes: 2.5× wording, DQ explanation + full export, consumption policy evidence, data-version cache identity, orphan process inspection | PARTIAL | Orphan process inspected 2026-09-29 with `docker top`: the `run_cp3_2_report` run had exited by itself; only uvicorn remains, so no action was taken. The rest are missing; DQ findings are truncated at `dashboard.py:216` (`findings[:200]`) |
-| C10 | UI/API wiring, end-to-end verification, updated docs | MISSING | |
-| C11 | Film updated with new capabilities from real captures | MISSING | Needs TTS key + licensed music (EXTERNAL) |
+| C9 | Reporting fixes: 2.5× wording, DQ explanation + full export, consumption policy evidence, data-version cache identity, orphan process inspection | DONE | 2.5× reworded in PLAN/LIMITATIONS as a historical 16-week figure; DQ grouped with unique-record coverage and CSV export; consumption policy tested; run reuse keyed on data version; report process had exited on its own (`docker top`) |
+| C10 | UI/API wiring, end-to-end verification, updated docs | DONE | See the final gate above. Docs updated: ANALYTICS_METHODS, API, LIMITATIONS, PILOT_FINDINGS, DEMO_GUIDE, PLAN |
+| C11 | Film | OUT OF SCOPE | Excluded by the user on 2026-09-29; the uncommitted `docs/demo_film/` files were left untouched |
