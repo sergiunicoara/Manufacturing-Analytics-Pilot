@@ -16,6 +16,7 @@ from app.synthetic import (
     demand,
     dq_injection,
     execution,
+    execution_history,
     master_data,
     state_snapshots,
 )
@@ -43,12 +44,15 @@ def generate(staging_dir: str = "staging") -> GenContext:
     capacity_and_cost.generate_all(ctx)
     state_snapshots.generate_all(ctx)
     manifest = dq_injection.inject_all(ctx, staging_dir)
+    # Last, on its own RNG stream: cannot reshuffle any table generated above.
+    history = execution_history.generate_all(ctx)
 
     os.makedirs(staging_dir, exist_ok=True)
     for table in TABLE_ORDER:
         df = ctx.tables[table]
         df.to_csv(os.path.join(staging_dir, f"{table}.csv"), index=False)
 
+    print("Execution history calibration: " + ", ".join(f"{k}={v}" for k, v in history.items()))
     print("Synthetic data generation complete. Row counts:")
     for table in TABLE_ORDER:
         print(f"  {table:35s} {len(ctx.tables[table]):>7d}")

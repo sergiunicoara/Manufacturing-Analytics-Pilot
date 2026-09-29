@@ -71,6 +71,25 @@ def timestamp_resolution_hours(ops: pd.DataFrame) -> float | None:
     return None
 
 
+def timestamp_resolution_mix(ops: pd.DataFrame) -> dict[str, int]:
+    """Operations whose recorded start and finish are both at midnight (day resolution) versus
+    carrying a time of day (sub-day resolution). Mixed sources are common: MES bookings vs. manual."""
+    both = ops.loc[ops["actual_start"].notna() & ops["actual_finish"].notna()]
+    start, finish = pd.to_datetime(both["actual_start"]), pd.to_datetime(both["actual_finish"])
+    day = (start == start.dt.normalize()) & (finish == finish.dt.normalize())
+    return {"sub_day": int((~day).sum()), "day": int(day.sum())}
+
+
+def resolution_assumption(mix: dict[str, int]) -> str:
+    if mix["day"] and not mix["sub_day"]:
+        return ("Timestamps are recorded at day resolution, so an elapsed value of 0 means same-day start and "
+                "finish, not zero effort.")
+    if mix["day"]:
+        return (f"Timestamp resolution is mixed: {mix['sub_day']} operations carry a time of day and {mix['day']} "
+                "are recorded at day resolution only (whole-day elapsed values); both are included.")
+    return "Timestamps carry a time of day (minute resolution)."
+
+
 def classify_operations(ops: pd.DataFrame, production_orders: pd.DataFrame,
                         blocking: BlockingIndex | None = None,
                         window: ObservationWindow = ObservationWindow()) -> pd.DataFrame:

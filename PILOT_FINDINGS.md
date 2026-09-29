@@ -46,10 +46,13 @@ The generated data demonstrate propagation from CAB-100 demand through subassemb
 
 All figures below come from the running API and database. The data is synthetic, and the provenance labels still apply to each value.
 
-### Recorded stage performance
-- 5,408 operations are usable completed observations (COMPLETED_VALID), and 95.5 % of the operations that should have produced one did. Excluded and reported separately: 149 completed without a finish time, 178 under a blocking DQ finding on their order, 163 started but unfinished, and 3,790 not started.
-- The recorded median is **72 hours** (calendar elapsed). The recorded values run about ten times the routing standard, e.g. Laser Cutting 2 P50 96 h against a standard of 7.8 h. Recorded time includes waiting and non-working time and is not productive processing time. The gap shows the synthetic actuals were not calibrated to the routings; it is not a real plant finding.
-- Timestamps are at day resolution, so no same-day observation should be read as zero effort.
+### Recorded stage performance (after the 2026-09-29 execution-history calibration)
+- 9,888 operations are usable completed observations (COMPLETED_VALID), with 97.5 % coverage. Excluded and reported separately: 149 completed without a finish time, 178 under a blocking DQ finding on their order, 163 started but unfinished, and 3,790 not started.
+- The recorded median is **9.2 hours** against a routing-standard median of 7.4 h. Two-shift laser cutting runs at a P50 of about 8 h against a 7.3–7.4 h standard.
+- Welding 1 is the exception, and it follows from the calendar: its standard is about 110 working hours per operation on a single 8-hour, 5-day shift, so the recorded P50 is about 480 calendar hours.
+- 94 consecutive-operation overlaps (transfer batches) are counted, not clamped. The median inter-operation gap is 15.6 h; it is elapsed time, not proven queue time.
+- Resolution is mixed: 9,576 operations carry a time of day and 412 older records are day-resolution only. Both are included and the evidence says so.
+- Before calibration, operation timestamps were a whole-day split of the order span and ran about ten times the standard. That was a generator artefact, now fixed. The calibration touched only `production_orders` and `production_order_operations`: every other table is bit-identical, and the five scenario backlogs are unchanged.
 
 ### Data-quality explanation
 - 641 findings fall into 13 rule groups. 563 are classified blocking, but only 562 unique records carry a blocking finding, and the largest share of any source table is 4.94 % (routing operations). So "88 % of findings are blocking" does not mean 88 % of the data is unusable.
@@ -68,4 +71,7 @@ All figures below come from the running API and database. The data is synthetic,
 - Buffer only costs about 79 k EUR more expense and 1.77 M EUR in buffer capital and leaves 93 h of backlog. Capacity only costs about 3.5 k EUR and leaves 164 h. The pilot presents these facts and leaves the choice to planners.
 
 ### Planning policy
-- At default thresholds 12 finished goods are make-to-order, 1 is assemble-to-order, and 127 have insufficient evidence (mostly fewer than 5 orders or fewer than 3 completed production orders per item). 116 decoupling candidates were found. This shows how thin the synthetic per-item history is; it is not tuned away.
+- At default thresholds 53 finished goods are make-to-order, 17 are assemble-to-order and 70 have insufficient evidence. 116 decoupling candidates were found.
+- The remaining blockers: 40 finished goods depend on a component whose routing is DQ-defective, so its history cannot be measured; 32 low-runners have fewer than 5 order lines; 9 have fewer than 3 completed orders.
+- No make-to-stock outcome arises, because customer tolerance (a median of about three weeks) exceeds the recorded route times.
+- Before calibration the result was 12 MTO, 1 ATO and 127 insufficient, because most items had only 1–3 completed production orders.

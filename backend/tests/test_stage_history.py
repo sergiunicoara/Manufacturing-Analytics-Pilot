@@ -143,3 +143,12 @@ def test_wip_ageing_uses_latest_snapshot_and_flags_future_entry():
     assert list(aged["wip_id"]) == [1, 2, 3]
     assert list(aged["age_days"].iloc[:2]) == [12.0, 2.0]
     assert aged.iloc[2]["age_class"] == "INVALID_AGE" and pd.isna(aged.iloc[2]["age_days"])
+
+
+def test_resolution_mix_is_reported_not_assumed(fixture_ops):
+    mix = sh.timestamp_resolution_mix(fixture_ops)
+    assert mix == {"sub_day": 0, "day": 9}   # the nine operations with both timestamps
+    assert "day resolution" in sh.resolution_assumption(mix)
+    fine = fixture_ops.copy()
+    fine.loc[0, "actual_finish"] = pd.Timestamp("2026-05-06 13:00")
+    assert "mixed" in sh.resolution_assumption(sh.timestamp_resolution_mix(fine))

@@ -1,5 +1,16 @@
 # Lessons
 
+## 2026-09-29 — Calibrating one domain without moving the rest
+
+The execution history (operation timestamps, completed-order counts) was a generator artefact: whole-day splits of the order span gave recorded times of about 10× the routing standard, and 1–3 completed orders per item starved the policy heuristic. The fix followed the CP3.2 lesson literally. A new final generator step (`execution_history.py`) runs **after** DQ injection and snapshots, on its own spawned stream (`SeedSequence(seed, spawn_key=(2,))`). It only rewrites timestamps of fully COMPLETED orders and appends new completed orders, and it never touches WIP-feeding open orders.
+
+The proof was measured, not argued: fingerprints of all 22 generated tables were taken before and after, only the two execution tables changed, and the five scenario backlogs stayed identical. The local database was refreshed with a guarded, non-destructive loader rather than the destructive DDL reload, so scenario and cost history survived.
+
+**How to apply going forward:**
+- Put a new synthetic domain last, on its own spawned stream.
+- Fingerprint every table before and after the change.
+- Refresh only the changed tables, with guards that refuse if anything else differs.
+
 ## 2026-09-28 — CP3.2: isolating RNG streams fixed the whack-a-mole calibration problem
 
 CP3.1's lesson correctly diagnosed that changing an RNG call's *shape*
