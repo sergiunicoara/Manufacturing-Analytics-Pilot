@@ -130,3 +130,52 @@
       with Mermaid architecture and data-model diagrams.
 - [x] Focused CP4/CP5 tests, full backend suite, frontend build, and live
       API/browser verification.
+
+## ERP-pilot completion (docs/IMPLEMENT_REMAINING_PROMPT.md) — PLANNED 2026-09-29
+
+Matrix: docs/REQUIREMENTS_COMPLETION_MATRIX.md. Fresh baseline: 95 tests pass.
+
+### Stage 2 — Historical stage performance + DQ
+- [x] analytics/stage_history.py: completed-op cohort, elapsed = actual_finish − actual_start;
+      separate open / missing / invalid-order / duplicate / overlapping buckets; DQ exclusions;
+      inter-op gaps labelled "elapsed gap", never "queue"; median/P85/P95, coverage, by item/WC/site/period
+- [x] Page read model + UI panel "Recorded (synthetic timestamps)" next to "Projected"
+- [x] DQ explanation read model (rule × origin × class × scope, unique entities, coverage) + paginated/CSV export
+- [x] Write forecast_consumption audit rows; state nearest-bucket/no-spillover policy in evidence; tests
+- [x] WIP ageing from wip.stage_entered_at
+- [x] Fixed: write_findings dropped impact_scope/affected_entity_* (regression test added)
+- Verified 2026-09-29: 29 targeted tests in container; live endpoints; browser (Stage Performance, drawer, records, Data Quality)
+### Stage 3 — Cost, policy, export
+- [x] analytics/cost.py: documented currency/valuation date; unit cost breakdown (no double count of rolled-up
+      material); buffer capital delta; WIP carrying cost (only where item-level valuation is supported,
+      else UNAVAILABLE + coverage); intervention cost from added *scheduled paid* hours × rate (ASSUMED rates);
+      five-case summary with residual backlog. Persist with run_id. Copilot tool get_cost.
+- [x] analytics/policy.py: MTS/MTO/ATO/INSUFFICIENT_EVIDENCE with configurable thresholds; decoupling candidates
+- [x] Versioned parameter package export (CSV + JSON + JSON Schema), unmapped M3 fields marked; round-trip tests
+- [x] Engine: additive inventory_end_by_period snapshot (material rows exist only in weeks with demand, so
+      idle buffer stock was invisible to valuation); regression test proves physical results unchanged
+- [x] db/migrations/ + app.db.migrate (rerunnable, ledger in schema_migrations); 003_cost_results.sql
+- Verified 2026-09-29: cost/policy/export tests; five cases persisted to cost_results (runs 2–6); browser pages
+- Finding: policy evidence insufficient for 127/140 FG at default thresholds (few orders / completed POs)
+### Stage 4 — Integration, SQL, restore, security
+- [ ] DATA_REQUEST.md + request contract (YAML/JSON) + checker CLI (pass/warn/block)
+- [ ] M3_MAPPING.md — every M3 name marked HYPOTHESIS/PENDING unless verified
+- [ ] integrations/: ERPAdapter, BIExportAdapter, MESAdapter protocols + simulated file adapters + contract tests
+- [ ] INTEGRATION.md (Mermaid, ownership, cadence, late data, retry, incremental extraction)
+- [ ] db/ddl/100_read_models.sql: CREATE OR ALTER views (forecast accuracy, weekly load, stage elapsed);
+      SQL/Python parity tests against the running SQL Server
+- [ ] scripts/restore/: VERIFYONLY / FILELISTONLY / RESTORE WITH MOVE, refuses existing DB, validated identifiers;
+      round trip into a new disposable DB name; RUNBOOK
+- [ ] Secured profile: compose override without default password, localhost-bound ports, API key/role auth
+      on mutations; SQL logins pilot_reader (views only) / pilot_app (scenario tables); least-privilege test;
+      LLM disabled unless ALLOW_EXTERNAL_LLM=true; SECURITY.md
+- [ ] Data-version identity (hash of source table checksums + code version) in scenario_runs reuse key
+### Stage 5 — Verification + docs
+- [ ] Fix 2.5× wording (PLAN.md, LIMITATIONS.md); refresh PILOT_FINDINGS from live run
+- [ ] Full backend suite + `npm run build` + browser walkthrough; update matrix with commands/results
+### Stage 6 — Film (OUT OF SCOPE per user 2026-09-29: "leave the presentation part")
+- [ ] Update SCENES/SCRIPT/deck; capture real footage; captions; render 1080p/720p
+      (BLOCKED externally: TTS key, licensed music)
+
+Decisions taken (routine): SQL views are the single authority for the three BI metrics that
+Python also computes; parity is asserted, not duplicated logic. No ERP write-back anywhere.

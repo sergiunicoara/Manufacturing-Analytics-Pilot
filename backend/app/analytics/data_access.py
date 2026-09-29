@@ -19,6 +19,15 @@ def load_all_tables(engine: sa.engine.Engine) -> dict[str, pd.DataFrame]:
     return tables
 
 
+FINDING_COLUMNS = ("rule_id", "entity", "record_id", "severity", "classification", "origin",
+                   "manifest_key", "impact_scope", "affected_entity_type", "affected_entity_id",
+                   "description", "detected_value", "expected_constraint", "recommended_action")
+
+
+def finding_record(finding) -> dict:
+    return {column: getattr(finding, column) for column in FINDING_COLUMNS}
+
+
 def write_findings(engine: sa.engine.Engine, findings: list, metadata: sa.MetaData) -> int:
     from app.dq.engine import Finding
 
@@ -28,20 +37,22 @@ def write_findings(engine: sa.engine.Engine, findings: list, metadata: sa.MetaDa
     records = []
     for f in findings:
         assert isinstance(f, Finding)
-        records.append({
-            "rule_id": f.rule_id,
-            "entity": f.entity,
-            "record_id": f.record_id,
-            "severity": f.severity,
-            "classification": f.classification,
-            "origin": f.origin,
-            "manifest_key": f.manifest_key,
-            "description": f.description,
-            "detected_value": f.detected_value,
-            "expected_constraint": f.expected_constraint,
-            "recommended_action": f.recommended_action,
-        })
+        records.append(finding_record(f))
     with engine.begin() as conn:
         conn.execute(sa.text("DELETE FROM dq_findings"))
         conn.execute(table.insert(), records)
+    return len(records)
+
+
+def write_consumption_audit(engine: sa.engine.Engine, events: list[dict]) -> int:
+    """Replace the derived forecast_consumption audit trail with the current run's events."""
+    records = [{"forecast_id": int(e["forecast_id"]), "sales_order_line_id": int(e["sales_order_line_id"]),
+                "consumed_qty": float(e["consumed_qty"]), "consumption_date": e["consumption_date"]}
+               for e in events]
+    with engine.begin() as conn:
+        conn.execute(sa.text("DELETE FROM forecast_consumption"))
+        if records:
+            conn.execute(sa.text("INSERT INTO forecast_consumption (forecast_id, sales_order_line_id, consumed_qty, "
+                                 "consumption_date) VALUES (:forecast_id, :sales_order_line_id, :consumed_qty, "
+                                 ":consumption_date)"), records)
     return len(records)

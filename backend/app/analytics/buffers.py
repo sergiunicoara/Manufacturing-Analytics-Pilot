@@ -7,7 +7,7 @@ import statistics
 import pandas as pd
 
 from app.analytics.evidence import evidence, source
-from app.analytics.forecast import reconstruct_forecast_history
+from app.analytics.forecast import realized_wape_by_item
 from app.analytics.period_engine import PeriodEngineOutput
 
 
@@ -22,17 +22,7 @@ def recommend_buffers(tables: dict[str, pd.DataFrame], result: PeriodEngineOutpu
     ops = tables["routing_operations"]
     headers = tables["routing_headers"]
     items = tables["items"].set_index("item_id")
-    forecast_wape: dict[int, float] = {}
-    forecast_tables = {"customer_forecasts", "forecast_versions", "sales_order_lines", "sales_orders"}
-    if forecast_tables.issubset(tables):
-        history = reconstruct_forecast_history(tables["customer_forecasts"], tables["forecast_versions"],
-                                                tables["sales_order_lines"], tables["sales_orders"])
-        realized = history.loc[history["actual_qty"] > 0].copy()
-        if not realized.empty:
-            realized["absolute_error"] = (realized["forecast_qty"] - realized["actual_qty"]).abs()
-            grouped = realized.groupby("item_id")[["absolute_error", "actual_qty"]].sum()
-            forecast_wape = {int(item): float(row["absolute_error"] / row["actual_qty"])
-                             for item, row in grouped.iterrows() if row["actual_qty"] > 0}
+    forecast_wape = realized_wape_by_item(tables)
     recommendations = []
     for wc_id, periods in sorted(constrained.items()):
         utilization = max(float(r.utilization_pct) for r in periods if math.isfinite(float(r.utilization_pct)))

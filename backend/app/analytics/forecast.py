@@ -14,6 +14,14 @@ import datetime as dt
 import numpy as np
 import pandas as pd
 
+CONSUMPTION_POLICY = (
+    "Nearest eligible bucket: each order line consumes only the forecast bucket for the same customer, "
+    "item and site whose delivery week is closest to the requested ship date, within ±{weeks} weeks "
+    "(ties go to the earlier-listed bucket). No spillover: quantity above that bucket's remaining "
+    "forecast is not taken from another bucket; it stays firm demand only. Orders consume in order-date "
+    "sequence. Planning demand = firm orders + unconsumed forecast."
+)
+
 # ============================================================
 # Reconstruction
 # ============================================================
@@ -288,3 +296,20 @@ def compute_forecast_volatility(history_df: pd.DataFrame) -> pd.DataFrame:
             "n_revisions": len(grp), "volatility_std_pct_change": float(np.std(pct_change)),
         })
     return pd.DataFrame(rows)
+
+
+def realized_wape_by_item(tables: dict[str, pd.DataFrame]) -> dict[int, float]:
+    """Per-item WAPE over forecast revisions whose delivery bucket has realized orders.
+    Items with no realized demand are absent (unknown), not zero."""
+    needed = {"customer_forecasts", "forecast_versions", "sales_order_lines", "sales_orders"}
+    if not needed.issubset(tables):
+        return {}
+    history = reconstruct_forecast_history(tables["customer_forecasts"], tables["forecast_versions"],
+                                           tables["sales_order_lines"], tables["sales_orders"])
+    realized = history.loc[history["actual_qty"] > 0].copy()
+    if realized.empty:
+        return {}
+    realized["absolute_error"] = (realized["forecast_qty"] - realized["actual_qty"]).abs()
+    grouped = realized.groupby("item_id")[["absolute_error", "actual_qty"]].sum()
+    return {int(item): float(row["absolute_error"] / row["actual_qty"])
+            for item, row in grouped.iterrows() if row["actual_qty"] > 0}

@@ -68,3 +68,17 @@ def ensure_run(engine: sa.Engine, name: str, parameters: dict, output,
                                  "seed": settings.synthetic_seed}).scalar()
     return int(existing) if existing is not None else save_run(engine, name, parameters, output,
                                                                 intervention_type, recommendations)
+
+
+def save_cost_results(engine: sa.Engine, run_id: int, results: list[dict]) -> int:
+    """Replace one run's cost rows. Each row: metric, value (None = unknown), units, provenance, status, assumptions."""
+    with engine.begin() as conn:
+        conn.execute(sa.text("DELETE FROM cost_results WHERE run_id = :run_id"), {"run_id": run_id})
+        for row in results:
+            conn.execute(sa.text("INSERT INTO cost_results (run_id, metric, value, units, provenance, status, "
+                                 "assumptions_json) VALUES (:run_id, :metric, :value, :units, :provenance, :status, "
+                                 ":assumptions)"),
+                         {"run_id": run_id, "metric": row["metric"], "value": _sql_number(row["value"]),
+                          "units": row["units"], "provenance": row["provenance"], "status": row["status"],
+                          "assumptions": json.dumps(row["assumptions"])})
+    return len(results)

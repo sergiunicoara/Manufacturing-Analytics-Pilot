@@ -24,10 +24,18 @@ def json_value(value):
 
 def evidence(value, formula: str, inputs: list[dict] | None = None,
              trace: list[str] | None = None, assumptions: list[str] | None = None,
-             provenance: str = "DERIVED") -> dict:
-    return {"value": json_value(value), "provenance": provenance,
-            "formula": formula, "inputs": json_value(inputs or []),
-            "calculation_trace": trace or [], "assumptions": assumptions or []}
+             provenance: str = "DERIVED", *, units: str | None = None,
+             time_scope: str | None = None, coverage: dict | None = None,
+             exclusions: list[str] | None = None, data_origin: str | None = None) -> dict:
+    """`data_origin` (e.g. SYNTHETIC) is independent of calculation provenance:
+    a MEASURED value computed from generated timestamps is still synthetic."""
+    result = {"value": json_value(value), "provenance": provenance,
+              "formula": formula, "inputs": json_value(inputs or []),
+              "calculation_trace": trace or [], "assumptions": assumptions or []}
+    extras = {"units": units, "time_scope": time_scope, "coverage": json_value(coverage),
+              "exclusions": exclusions, "data_origin": data_origin}
+    result.update({key: value for key, value in extras.items() if value is not None})
+    return result
 
 
 def source(name: str, value, record_id=None, provenance: str = "MEASURED") -> dict:

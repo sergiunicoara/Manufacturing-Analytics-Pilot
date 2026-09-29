@@ -52,8 +52,9 @@ def computed_context(tables):
     return tables, comparison
 
 
-def test_all_nine_pages_supply_evidence(monkeypatch, computed_context):
+def test_every_page_supplies_evidence(monkeypatch, computed_context):
     monkeypatch.setattr(dashboard, "context", lambda: computed_context)
+    monkeypatch.setattr(dashboard, "source_tables", lambda: computed_context[0])
     for slug, build in dashboard.PAGES.items():
         page = build()
         assert page["title"] and page["metrics"], slug
@@ -65,7 +66,23 @@ def test_all_nine_pages_supply_evidence(monkeypatch, computed_context):
 def test_story_numbers_come_from_computed_results(monkeypatch, computed_context):
     from app.api import story
     monkeypatch.setattr(dashboard, "context", lambda: computed_context)
+    monkeypatch.setattr(dashboard, "source_tables", lambda: computed_context[0])
     result = story()
     assert len(result["beats"]) == 4
     assert str(dashboard.scenarios()["rows"][1]["value"]) in result["beats"][1]["narration"]
     assert all(beat["evidence"]["formula"] for beat in result["beats"])
+
+
+def test_cost_questions_route_to_the_deterministic_cost_tool():
+    from app.api import CopilotRequest, _requested_tools
+    assert "get_cost" in _requested_tools(CopilotRequest(question="What does the capacity option cost?"))
+    assert "get_cost" not in _requested_tools(CopilotRequest(question="Which work centre is the constraint?"))
+
+
+def test_cost_tool_returns_evidence_for_each_case(monkeypatch, computed_context):
+    from app.api import CopilotRequest, _deterministic_tool, _has_evidence
+    monkeypatch.setattr(dashboard, "context", lambda: computed_context)
+    tool, rows = _deterministic_tool(CopilotRequest(question="combined cost", tool="get_cost"))
+    assert tool == "get_cost" and [r["case"] for r in rows] == ["COMBINED"]
+    assert _has_evidence(rows)
+    assert rows[0]["wip_carrying_cost"] is None

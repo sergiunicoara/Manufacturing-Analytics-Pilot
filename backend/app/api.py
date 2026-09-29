@@ -4,10 +4,10 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
-from app.analytics import dashboard
+from app.analytics import dashboard, parameter_export, stage_history
 from app.analytics.buffers import recommend_buffers
 from app.analytics.evidence import evidence, json_value, source
 from app.analytics.period_engine import run_period_engine
@@ -32,6 +32,62 @@ def _page(slug: str, item_id: int | None = None):
 @router.get("/api/pages/{slug}")
 def page(slug: str, item_id: int | None = None):
     return _page(slug, item_id)
+
+
+@router.get("/api/stage-performance/records")
+def stage_performance_records(work_centre_id: int | None = None, record_class: str | None = None,
+                              offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)):
+    if record_class is not None and record_class not in stage_history.RECORD_CLASSES:
+        raise HTTPException(status_code=422, detail=f"record_class must be one of {stage_history.RECORD_CLASSES}")
+    try:
+        return dashboard.stage_records(work_centre_id, record_class, offset, limit)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Analytics unavailable: {exc}") from exc
+
+
+@router.get("/api/dq/findings")
+def dq_findings(rule_id: str | None = None, classification: str | None = None, origin: str | None = None,
+                entity: str | None = None, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)):
+    try:
+        return dashboard.dq_findings(rule_id, classification, origin, entity, offset, limit)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Analytics unavailable: {exc}") from exc
+
+
+@router.get("/api/dq/findings.csv")
+def dq_findings_csv(rule_id: str | None = None, classification: str | None = None, origin: str | None = None,
+                    entity: str | None = None):
+    try:
+        body = dashboard.dq_findings_csv(rule_id, classification, origin, entity)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Analytics unavailable: {exc}") from exc
+    return Response(body, media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="dq_findings.csv"'})
+
+
+@router.get("/api/parameters/package.json")
+def parameter_package_json():
+    try:
+        package = dashboard.parameter_package()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Analytics unavailable: {exc}") from exc
+    return Response(parameter_export.to_json(package), media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{package.package_id}.json"'})
+
+
+@router.get("/api/parameters/package.csv")
+def parameter_package_csv():
+    try:
+        package = dashboard.parameter_package()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Analytics unavailable: {exc}") from exc
+    return Response(parameter_export.to_csv(package), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{package.package_id}.csv"'})
+
+
+@router.get("/api/parameters/schema.json")
+def parameter_package_schema():
+    return Response(parameter_export.json_schema(), media_type="application/schema+json")
 
 
 @router.get("/kpi/plant-overview")
@@ -101,6 +157,9 @@ def story():
     ], "horizon_rationale": "Twelve weeks includes the shock and intervention response. Baseline deterioration is displayed in the comparison; it is not a stable control."}
 
 
+COST_TERMS = ("cost", "capital", "expense", "carrying", "money", "eur")
+
+
 class CopilotRequest(BaseModel):
     question: str = Field(min_length=3, max_length=1000)
     tool: str | None = None
@@ -130,11 +189,18 @@ def _deterministic_tool(request: CopilotRequest) -> tuple[str, dict | list]:
             return tool, {}
         return tool, run_scenario(request.scenario)
     if tool == "get_dq_findings":
-        data = _page("data-quality")
-        rows = data["rows"]
         if item_match:
-            rows = [r for r in rows if str(item_match.group(1)) == str(r["record_id"])]
-        return tool, rows[:20]
+            findings = dashboard.dq_findings(limit=10_000)["findings"]
+            matches = [f for f in findings if item_match.group(1) in {str(f["record_id"]), str(f["affected_entity_id"])}]
+            return tool, [{**f, "evidence": evidence(f["classification"], "ANALYTICS_METHODS.md#data-quality",
+                                                     [source("rule", f["rule_id"], f["record_id"], "DERIVED"),
+                                                      source("entity", f["entity"], f["record_id"])],
+                                                     [], [f["description"]])} for f in matches[:20]]
+        return tool, _page("data-quality")["rows"][:20]
+    if tool == "get_cost":
+        rows = _page("decision-economics")["rows"]
+        case = next((c for c in dashboard.CASES if c.lower() in question or c.lower().replace("_", " ") in question), None)
+        return tool, [r for r in rows if case is None or r["case"] == case]
     if tool == "explain_recommendation":
         data = _page("recommendation")
         matches = data["rows"]
@@ -182,6 +248,8 @@ def _requested_tools(request: CopilotRequest) -> list[str]:
         chosen.append("get_dq_findings")
     if any(term in question for term in ("recommend", "buffer")):
         chosen.append("explain_recommendation")
+    if any(term in question for term in COST_TERMS):
+        chosen.append("get_cost")
     if not chosen or any(term in question for term in ("kpi", "capacity", "backlog", "scenario", "shock")):
         chosen.insert(0, "get_kpi")
     return chosen

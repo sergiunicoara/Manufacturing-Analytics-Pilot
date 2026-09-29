@@ -389,3 +389,21 @@ def test_short_forecast_spike_does_not_create_a_persistent_constraint():
     # oscillating or re-growing.
     tail = [r.backlog_hours_end for r in series[peak_week_idx:]]
     assert all(tail[i] >= tail[i + 1] - 1e-9 for i in range(len(tail) - 1))
+
+
+def test_inventory_snapshot_tracks_idle_buffer_and_matches_material_netting():
+    plant = mini_plant(4)
+    weeks_ = plant["horizon"]
+    demand = {weeks_[0]: {1: 100.0}, weeks_[2]: {1: 100.0}}          # no demand in weeks 2 and 4
+    base = run_period_engine(top_level_demand=demand, **plant)
+    output = run_period_engine(top_level_demand=demand, buffer_boost_by_item={1: 300.0}, **plant)
+    # week 2 has no FG requirement row, but the idle buffer is still carried inventory
+    assert not any(r.item_id == 1 and r.period_start_date == weeks_[1] for r in output.material_results)
+    assert output.inventory_end_by_period[weeks_[1]][1] == pytest.approx(200.0)
+    assert output.inventory_end_by_period[weeks_[3]][1] == pytest.approx(100.0)
+    for r in output.material_results:
+        end = output.inventory_end_by_period[r.period_start_date].get(r.item_id, 0.0)
+        assert end == pytest.approx(max(0.0, r.usable_inventory + r.scheduled_receipts - r.gross_requirement))
+    # the snapshot is an added output only: physical results are unchanged by recording it
+    assert [w.required_hours for w in base.wc_series(1)] == pytest.approx(
+        [w.required_hours for w in run_period_engine(top_level_demand=demand, **plant).wc_series(1)])

@@ -36,6 +36,7 @@ services:
     volumes:
       - ./staging:/app/staging
       - ./db/ddl:/app/db/ddl:ro
+      - ./db/migrations:/app/db/migrations:ro
       - ./scripts:/app/scripts:ro
 
   frontend:

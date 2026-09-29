@@ -106,6 +106,8 @@ class MaterialRequirementPeriodResult:
 class PeriodEngineOutput:
     work_centre_results: list[WorkCentrePeriodResult] = field(default_factory=list)
     material_results: list[MaterialRequirementPeriodResult] = field(default_factory=list)
+    # Carried inventory state at the end of each period, including items with no requirement that week.
+    inventory_end_by_period: dict[dt.date, dict[int, float]] = field(default_factory=dict)
 
     def wc_series(self, work_centre_id: int) -> list[WorkCentrePeriodResult]:
         return sorted(
@@ -355,6 +357,8 @@ def run_period_engine(
             for r in output.work_centre_results:
                 if r.period_start_date == period and r.work_centre_id == primary:
                     r.constraint_classification = "PRIMARY_CONSTRAINT"
+
+        output.inventory_end_by_period[period] = {item: qty for item, qty in inventory_state.items() if qty > 0}
 
     return output
 

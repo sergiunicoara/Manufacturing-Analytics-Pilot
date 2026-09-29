@@ -197,3 +197,47 @@ def test_forecast_volatility_requires_at_least_two_revisions():
     assert len(result) == 1  # the single-revision stream is excluded
     assert result.iloc[0]["item_id"] == 10
     assert result.iloc[0]["volatility_std_pct_change"] == pytest.approx(0.0)  # only one transition, std of one value is 0
+
+
+def _one_customer_frames(buckets, lines):
+    versions = _forecast_versions([dt.date(2026, 1, 5)])
+    forecasts = pd.DataFrame([{"forecast_id": fid, "forecast_version_id": 1, "customer_id": cust, "item_id": item,
+                               "site_id": site, "delivery_period_start": week, "qty": qty}
+                              for fid, cust, item, site, week, qty in buckets])
+    sales_orders = pd.DataFrame([{"sales_order_id": i, "customer_id": cust, "site_id": site,
+                                  "order_date": dt.date(2026, 2, 1) + dt.timedelta(days=i)}
+                                 for i, (cust, item, site, ship, qty) in enumerate(lines, start=1)])
+    sales_order_lines = pd.DataFrame([{"line_id": i, "sales_order_id": i, "item_id": item, "qty": qty,
+                                       "requested_ship_date": ship}
+                                      for i, (cust, item, site, ship, qty) in enumerate(lines, start=1)])
+    return forecasts, versions, sales_order_lines, sales_orders
+
+
+def test_consumption_uses_nearest_bucket_without_spillover():
+    week = dt.date(2026, 3, 2)
+    forecasts, versions, lines, orders = _one_customer_frames(
+        [(1, 1, 10, 1, week, 100), (2, 1, 10, 1, week + dt.timedelta(weeks=1), 100)],
+        [(1, 10, 1, week + dt.timedelta(days=1), 250)])   # nearest = bucket 1; 150 exceeds it
+    result = consume_forecast(forecasts, versions, lines, orders, consumption_window_weeks=4)
+    assert [(e["forecast_id"], e["consumed_qty"]) for e in result["consumption_events"]] == [(1, 100)]
+    remaining = dict(zip(result["remaining_forecast"]["delivery_period_start"].dt.date,
+                         result["remaining_forecast"]["remaining_qty"]))
+    assert remaining == {week: 0, week + dt.timedelta(weeks=1): 100}   # bucket 2 untouched: no spillover
+
+
+def test_consumption_is_isolated_by_customer_item_and_site():
+    week = dt.date(2026, 3, 2)
+    forecasts, versions, lines, orders = _one_customer_frames(
+        [(1, 1, 10, 1, week, 100)],
+        [(2, 10, 1, week, 50),     # other customer
+         (1, 11, 1, week, 50),     # other item
+         (1, 10, 2, week, 50)])    # other site
+    result = consume_forecast(forecasts, versions, lines, orders, consumption_window_weeks=4)
+    assert result["consumption_events"] == []
+    assert result["remaining_forecast"].iloc[0]["remaining_qty"] == 100
+
+
+def test_consumption_policy_text_states_window_and_no_spillover():
+    from app.analytics.forecast import CONSUMPTION_POLICY
+    text = CONSUMPTION_POLICY.format(weeks=4)
+    assert "±4 weeks" in text and "No spillover" in text

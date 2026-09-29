@@ -283,6 +283,8 @@ def run_four_intervention_comparison(
         "intervention_start_week": intervention_start,
         "per_work_centre_multipliers": {wc_id: r["multiplier"] for wc_id, r in per_wc_search.items()},
         "per_work_centre_search": per_wc_search,
+        "buffer_boost_by_item": buffer_boost,
+        "capacity_lever": capacity_lever,
         "BASELINE": baseline,
         "DEMAND_SHOCK_ONLY": shock["scenario"],
         "BUFFER_ONLY": buffer_only,

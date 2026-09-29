@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manufacturing Analytics Pilot — Architecture</title>
+<style>
+:root {
+  /* Pilot visual language: the same palette as the dashboard and deck. */
+  --plant-navy: #16202E;
+  --plant-navy-mid: #24324A;
+  --plant-steel: #2F6690;
+  --plant-steel-light: #7FA9CC;
+  --plant-weld: #D9622B;
+  --plant-weld-dark: #B04A18;
+  --plant-cream: #F3F1EB;
+  --plant-white: #FBFAF6;
+  --plant-sand: #D8D2C4;
+
+  --ink: var(--plant-navy);
+  --ink-soft: #5B6675;
+  --paper: var(--plant-cream);
+  --paper-raised: var(--plant-white);
+  --line: #DAD4C6;
+  --accent: var(--plant-weld-dark);
+  --accent-soft: color-mix(in srgb, var(--plant-weld) 13%, var(--plant-white));
+  --evidence: var(--plant-steel);
+  --evidence-soft: color-mix(in srgb, var(--plant-steel) 13%, var(--plant-white));
+  --mono: 'JetBrains Mono', 'IBM Plex Mono', Consolas, monospace;
+  --display: Oswald, 'Arial Narrow', 'Segoe UI', sans-serif;
+  --body: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --radius: 4px;
+}
+
+:root[data-theme="dark"] {
+  --ink: #ECE9E1;
+  --ink-soft: #AEB6C1;
+  --paper: var(--plant-navy);
+  --paper-raised: var(--plant-navy-mid);
+  --line: color-mix(in srgb, var(--plant-steel-light) 30%, var(--plant-navy));
+  --accent: #F28C4E;
+  --accent-soft: color-mix(in srgb, var(--plant-weld) 22%, var(--plant-navy));
+  --evidence: var(--plant-steel-light);
+  --evidence-soft: color-mix(in srgb, var(--plant-steel) 30%, var(--plant-navy));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #ECE9E1;
+    --ink-soft: #AEB6C1;
+    --paper: var(--plant-navy);
+    --paper-raised: var(--plant-navy-mid);
+    --line: color-mix(in srgb, var(--plant-steel-light) 30%, var(--plant-navy));
+    --accent: #F28C4E;
+    --accent-soft: color-mix(in srgb, var(--plant-weld) 22%, var(--plant-navy));
+    --evidence: var(--plant-steel-light);
+    --evidence-soft: color-mix(in srgb, var(--plant-steel) 30%, var(--plant-navy));
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  margin: 0;
+  padding: 0;
+}
+
+body { padding: 48px 24px 96px; }
+
+.wrap { max-width: 1180px; margin: 0 auto; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1px 5px;
+}
+
+/* ---------- Header ---------- */
+
+header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 40px;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+h1 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: clamp(32px, 4vw, 48px);
+  margin: 0;
+  text-wrap: balance;
+  letter-spacing: 0.005em;
+}
+
+.tagline {
+  font-size: 16px;
+  color: var(--ink-soft);
+  max-width: 66ch;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* ---------- Legend ---------- */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* ---------- Pipeline ---------- */
+
+.pipeline-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: 56px;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-soft) transparent;
+}
+.pipeline-scroll::-webkit-scrollbar { height: 8px; }
+.pipeline-scroll::-webkit-scrollbar-thumb { background: var(--ink-soft); border-radius: 4px; }
+
+.pipeline {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(230px, 1fr));
+  min-width: 1080px;
+  gap: 0;
+  position: relative;
+}
+
+.stage {
+  border-right: 1px dashed var(--line);
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.stage:last-child { border-right: none; }
+
+.stage-label {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 4px;
+}
+.stage-label b { color: var(--ink); font-weight: 700; }
+
+.hint {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin: 0 0 14px;
+}
+
+/* Scope caveat: visually distinct from the hover hint, because it states
+   what the system does NOT do. Overstated coverage is worse than none. */
+.scope-note {
+  border-left: 3px solid var(--accent);
+  background: var(--paper-raised);
+  padding: 10px 14px;
+  line-height: 1.65;
+  max-width: 100ch;
+}
+.scope-note b { color: var(--accent); }
+.scope-note code { background: var(--paper); }
+
+.node {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 13px 15px;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.5;
+  position: relative;
+  cursor: help;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.node[data-example]::after {
+  content: '?';
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.node[data-example]:hover,
+.node[data-example]:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.node[data-example]:hover::after,
+.node[data-example]:focus-visible::after { border-color: var(--accent); color: var(--accent); }
+.node .name { color: var(--ink); font-weight: 600; display: block; margin-bottom: 3px; padding-right: 14px; }
+.node .desc { color: var(--ink-soft); font-size: 12.5px; }
+
+.node.source { border-left: 3px solid var(--ink-soft); }
+.node.evidence { border-left: 3px solid var(--evidence); }
+.node.gate { border-left: 3px solid var(--accent); }
+
+/* ---------- Example tooltip (JS-positioned, escapes the scroll container) ---------- */
+
+#example-tooltip {
+  position: fixed;
+  z-index: 100;
+  max-width: 400px;
+  background: var(--paper-raised);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+#example-tooltip.visible { opacity: 1; transform: translateY(0); }
+#example-tooltip .src {
+  display: block;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* ---------- Sections ---------- */
+
+.section-title {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 500;
+  margin: 0 0 6px;
+}
+.section-sub {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin: 0 0 20px;
+  max-width: 72ch;
+  line-height: 1.55;
+}
+
+/* ---------- Evidence anatomy ---------- */
+
+.evidence-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 56px;
+  overflow-x: auto;
+}
+.statement {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.9;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  margin-bottom: 14px;
+}
+.statement mark {
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-bottom: 2px solid var(--accent);
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-width: 560px;
+}
+.field { background: var(--paper-raised); padding: 10px 12px; }
+.field .k {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  display: block;
+  margin-bottom: 4px;
+}
+.field .v { font-family: var(--mono); font-size: 12.5px; color: var(--ink); font-weight: 600; }
+.field .v small { font-weight: 400; color: var(--ink-soft); }
+.tag {
+  display: inline-block;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 2px;
+  margin-left: 4px;
+  vertical-align: 1px;
+  font-weight: 700;
+}
+.tag.measured { background: var(--evidence-soft); color: var(--evidence); border: 1px solid var(--evidence); }
+.tag.derived { background: var(--paper); color: var(--ink-soft); border: 1px solid var(--line); }
+.tag.assumed { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+.trace {
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.trace b { color: var(--ink); }
+
+/* ---------- Gates ---------- */
+
+.gate-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 56px;
+}
+.gate-box {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  padding: 18px 20px;
+}
+.gate-box h4 {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+.gate-box .pill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 2px 8px;
+  margin: 0 6px 10px 0;
+}
+.gate-box p { font-size: 13px; color: var(--ink-soft); line-height: 1.55; margin: 0; }
+.reject {
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+
+/* ---------- Layer stack ---------- */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 56px;
+}
+.stack-row { background: var(--paper-raised); display: grid; grid-template-columns: 230px 1fr; }
+.stack-row .lbl {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 14px 16px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+}
+.stack-row .body {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  display: flex;
+  align-items: center;
+}
+.stack-row.gap .lbl { color: var(--accent); }
+
+footer {
+  margin-top: 64px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node, #example-tooltip { transition: none; }
+}
+
+@media (max-width: 860px) {
+  body { padding: 32px 16px 72px; }
+  /* .pipeline keeps its min-width and scrolls horizontally instead of
+     collapsing, so the left-to-right flow survives on small screens. */
+  .gate-grid { grid-template-columns: 1fr; }
+  .stack-row { grid-template-columns: 1fr; }
+  .stack-row .lbl { border-right: none; border-bottom: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">Architecture — as implemented</span>
+    <h1>Manufacturing Analytics Pilot</h1>
+    <p class="tagline">
+      ERP-shaped extracts — item master, 3–9 level <code>BOMs</code>, <code>routings</code>,
+      work centres, weekly <code>forecast</code> snapshots, orders and stock — land in SQL Server,
+      pass a classified data-quality gate, and drive a week-by-week plant simulation that
+      carries backlog forward. Every number the API serves arrives with an evidence object:
+      formula, named inputs with source record IDs, calculation trace, assumptions, and a
+      <code>MEASURED</code> / <code>DERIVED</code> / <code>ASSUMED</code> tag.
+    </p>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--ink-soft)"></i> source data</span>
+      <span><i class="swatch" style="background:var(--evidence)"></i> evidence-bearing result</span>
+      <span><i class="swatch" style="background:var(--accent)"></i> gate — can stop a number</span>
+    </div>
+  </header>
+
+  <!-- PIPELINE -->
+  <p class="hint">Hover or focus any box for a real example from the code or the live seed-42 run.</p>
+  <p class="hint scope-note"><b>Scope, stated plainly:</b> the sources are a seeded synthetic
+    analogue of Infor M3 / MES data (seed <code>42</code>), not a client extract. There is no live
+    connection to M3, IBM i, Qlik Cloud, Bright Analytics or an MES. Stage lead time is
+    <b>modelled</b> from routing standards plus simulated queue — it is not yet measured from the
+    <code>actual_start</code>/<code>actual_finish</code> timestamps in
+    <code>production_order_operations</code>. The API has no authentication. Everything shown below
+    runs end-to-end in <code>docker compose</code> and is covered by 95 passing tests.</p>
+  <div class="pipeline-scroll"><div class="pipeline">
+    <div class="stage">
+      <div class="stage-label"><b>01</b> · ERP-shaped sources</div>
+      <div class="node source" tabindex="0" data-example="EXPECTED_RANGES (checked per table after load):&#10;  items              500 – 2 000&#10;  bom_components     500 – 10 000&#10;  routing_operations 500 – 10 000&#10;  work_centres        10 – 30&#10;  capacity_calendar  100 – 5 000&#10;&#10;BOM and routing headers carry effective_from / effective_to,&#10;so revisions are selected by date, not by &quot;latest&quot;.&#10;&#10;scripts/smoke_test.py:18"><span class="name">Master data</span><span class="desc">items · BOMs · routings · work centres · calendar</span></div>
+      <div class="node source" tabindex="0" data-example="forecast_versions: one snapshot per week (≈ 6 months)&#10;customer_forecasts: qty per customer × item × site × delivery week&#10;&#10;snapshot_date = delivery_week − h weeks&#10;→ 22 234 forecast revisions preserved, never aggregated away&#10;&#10;sales_orders / sales_order_lines: firm demand&#10;&#10;backend/app/synthetic/demand.py:106"><span class="name">Demand</span><span class="desc">weekly forecast snapshots · sales orders</span></div>
+      <div class="node source" tabindex="0" data-example="production_orders → production_order_operations&#10;  (planned + actual start/finish per operation)&#10;inventory · wip · purchase orders · standard_costs&#10;&#10;planted defects, recorded in a manifest so the DQ engine&#10;can be scored against them:&#10;  inject_missing_routing_times(rate=0.03)&#10;  inject_negative_inventory(rate=0.01)&#10;  inject_overlapping_bom_revisions(count=6) …&#10;&#10;backend/app/synthetic/dq_injection.py:168"><span class="name">Execution &amp; stock</span><span class="desc">production orders · ops · stock · WIP</span></div>
+    </div>
+    <div class="stage">
+      <div class="stage-label"><b>02</b> · Load + data quality</div>
+      <div class="node" tabindex="0" data-example="load_all(staging_dir, ddl_path)&#10;&#10;1. apply db/ddl/001_schema.sql (28 tables, 41 FKs, 33 indexes)&#10;2. load in TABLE_ORDER so every FK parent exists first&#10;3. SET IDENTITY_INSERT &lt;table&gt; ON&#10;   → source IDs survive the load unchanged,&#10;     so every evidence source_record_id still resolves&#10;&#10;backend/app/loader/load_staging_to_sql.py:91"><span class="name">load_staging_to_sql</span><span class="desc">DDL → FK-ordered load → IDs preserved</span></div>
+      <div class="node gate" tabindex="0" data-example="20 registered rules → 641 findings, each classified:&#10;  TOLERABLE         reported, stays in calculations&#10;  ASSUMPTION_BASED  usable only with a stated assumption&#10;  BLOCKING          excluded at its declared scope&#10;&#10;e.g. missing_routing_times: 7&#10;  → BLOCKING · KPI_BLOCKING · routing_operations · INJECTED&#10;&#10;planted → found cross-check printed by run_dq_engine&#10;&#10;backend/app/dq/rules.py:446"><span class="name">DQ rule engine</span><span class="desc">tolerable · assumption-based · blocking</span></div>
+      <div class="node gate" tabindex="0" data-example="build_blocking_index(dq_findings)&#10;&#10;GLOBAL_BLOCKING  → the whole run is flagged&#10;ENTITY_BLOCKING  → (entity_type, id) excluded&#10;KPI_BLOCKING     → only that KPI is withheld&#10;&#10;a defect in one routing does not discard an unrelated&#10;valid item or work centre; nothing is silently repaired&#10;&#10;backend/app/analytics/blocking.py:42"><span class="name">Blocking index</span><span class="desc">global / entity / KPI scope</span></div>
+    </div>
+    <div class="stage">
+      <div class="stage-label"><b>03</b> · Planning core</div>
+      <div class="node evidence" tabindex="0" data-example="consume_forecast(consumption_window_weeks=4)&#10;  order line consumes the same customer × item × site bucket&#10;  within ±4 weeks of its delivery date&#10;planning demand = firm orders + unconsumed forecast&#10;  (never double-counted)&#10;&#10;WAPE by horizon (live run):&#10;  0–2 w   9.56 %     9–12 w  62.38 %&#10;  3–4 w  20.45 %    13–20 w 109.57 %&#10;  5–8 w  38.78 %      21 w+ 191.62 %&#10;&#10;backend/app/analytics/forecast.py:79"><span class="name">Forecast</span><span class="desc">revisions · consumption · accuracy by horizon</span></div>
+      <div class="node evidence" tabindex="0" data-example="compute_low_level_codes(): every item gets the deepest&#10;level at which it appears anywhere in the BOM graph&#10;&#10;items are netted in LLC order; the NET requirement —&#10;not the gross — is exploded one level down&#10;&#10;cycles, missing components and ambiguous revisions&#10;become blocked branches, never silent zeros&#10;(MAX_EXPLOSION_DEPTH = 30, above the 3–9 level spec)&#10;&#10;backend/app/analytics/mrp.py:33"><span class="name">BOM explosion + MRP netting</span><span class="desc">low-level codes · net, not gross</span></div>
+      <div class="node evidence" tabindex="0" data-example="calendar → available → effective hours&#10;&#10;Welding 1 (work_centre 9), final shock week:&#10;  calendar   40.00 h   MEASURED&#10;  available  40.00 h   DERIVED&#10;  effective  35.24 h   DERIVED&#10;  required   35.88 h   DERIVED&#10;  utilization = 35.88 / 35.24 = 101.8 %&#10;&#10;backend/app/analytics/capacity.py:87"><span class="name">Three-tier capacity</span><span class="desc">load per work centre per week</span></div>
+    </div>
+    <div class="stage">
+      <div class="stage-label"><b>04</b> · Period engine</div>
+      <div class="node evidence" tabindex="0" data-example="run_period_engine(): one week at a time&#10;&#10;  backlog_end(w) = backlog_start(w) + required(w) − completed(w)&#10;  backlog_start(w+1) = backlog_end(w)&#10;&#10;capacity lever = (multiplier, effective_from):&#10;  applies only from the intervention week, so history&#10;  before it is never rewritten&#10;&#10;backend/app/analytics/period_engine.py:175"><span class="name">run_period_engine</span><span class="desc">stateful weekly backlog · WIP · material</span></div>
+      <div class="node evidence" tabindex="0" data-example="step_work_centre(utilization, backlog, state)&#10;&#10;  utilization &gt; 100 %                 → OVERLOADED&#10;  overloaded ≥ N consecutive weeks    → CANDIDATE_CONSTRAINT&#10;  candidate with the largest&#10;  cumulative backlog hours            → PRIMARY_CONSTRAINT&#10;&#10;live shock run: Welding 1 PRIMARY (146.7 h backlog),&#10;Inspection 1 CANDIDATE (114.6 %)&#10;&#10;backend/app/analytics/constraint.py:38"><span class="name">Constraint classification</span><span class="desc">overloaded → candidate → primary</span></div>
+      <div class="node evidence" tabindex="0" data-example="lead time = processing + queue + transfer&#10;&#10;processing: routing setup + run × batch  (capacity-independent)&#10;queue:      backlog at order ENTRY ÷ effective h per workday,&#10;            workdays → calendar days&#10;path:       finished-good route + longest manufactured&#10;            subassembly branch (e.g. CAB-100 → welded frame)&#10;&#10;CAB-100, week 12:  shock 35.48 d → capacity 25.71 d&#10;&#10;backend/app/analytics/leadtime.py:38"><span class="name">Stage lead time</span><span class="desc">processing · queue · transfer — modelled</span></div>
+      <div class="node gate" tabindex="0" data-example="reconcile_work_centre_hours(output, wc)&#10;&#10;  Σ required = Σ completed + final backlog&#10;  discrepancy &lt; max(1e-6, 1e-9 × Σ required)&#10;&#10;also reconcile_material_flow(); both run under overload,&#10;capacity intervention and buffer boost in the test suite&#10;&#10;backend/app/analytics/reconciliation.py:54"><span class="name">Flow conservation</span><span class="desc">hours and material must balance</span></div>
+    </div>
+    <div class="stage">
+      <div class="stage-label"><b>05</b> · Serving</div>
+      <div class="node evidence" tabindex="0" data-example="evidence(value, formula, inputs, trace, assumptions,&#10;         provenance=&quot;DERIVED&quot;)&#10;source(name, value, record_id, provenance=&quot;MEASURED&quot;)&#10;&#10;nine read models: plant-overview · demand-forecast ·&#10;production-flow · bom-explorer · capacity · wip-lead-time ·&#10;scenario-lab · data-quality · recommendation&#10;&#10;backend/app/analytics/evidence.py:25"><span class="name">Read models + evidence</span><span class="desc">every metric, point and row</span></div>
+      <div class="node" tabindex="0" data-example="POST /api/scenarios/run  (Pydantic-bounded)&#10;  demand_multiplier        0.5 – 3.0&#10;  buffer_boost_per_item    0 – 10 000&#10;  capacity_multiplier      1.0 – 3.0&#10;  intervention_start_week  1 – 12&#10;&#10;→ same period engine → persisted run_id&#10;ensure_run() reuses a run with identical parameters + seed&#10;&#10;backend/app/api.py:42"><span class="name">Scenario API</span><span class="desc">run · persist · compare</span></div>
+      <div class="node gate" tabindex="0" data-example="1. pick deterministic tools (get_kpi, get_dq_findings,&#10;   explain_recommendation, run_scenario)&#10;2. any tool returns nothing →&#10;   &quot;Insufficient evidence …&quot;, llm_used: false&#10;   — returned BEFORE any language-model call&#10;3. no API key → raw evidence bundle only&#10;4. key set → prose written from the bundle;&#10;   the raw bundle is always returned alongside&#10;&#10;backend/app/api.py:190"><span class="name">Evidence-gated copilot</span><span class="desc">refuses before the LLM, not after</span></div>
+      <div class="node" tabindex="0" data-example="React + Plotly, Vite on :5173&#10;&#10;nine workspace pages + Executive Story&#10;every card, chart point and table row opens the same&#10;Evidence Drawer: formula · inputs with source IDs ·&#10;calculation trace · assumptions · provenance&#10;&#10;frontend/src/DashboardApp.tsx:88"><span class="name">Dashboard + Evidence Drawer</span><span class="desc">no number without a drill-down</span></div>
+    </div>
+  </div></div>
+
+  <!-- EVIDENCE ANATOMY -->
+  <div class="section-title">Anatomy of a number</div>
+  <p class="section-sub">A value on the dashboard is never just a value. This is the evidence object the
+    API returns for the headline constraint figure in the live demand-shock run: an assumption can never
+    pass itself off as a measurement, because every input carries its own provenance.</p>
+
+  <div class="evidence-card">
+    <div class="statement">GET /api/pages/capacity → "<mark>Welding 1 · 101.8 % utilization</mark> in the final demand-shock week — PRIMARY_CONSTRAINT, 146.7 backlog hours."</div>
+    <div class="fields">
+      <div class="field"><span class="k">value</span><span class="v">101.8 <small>%</small></span></div>
+      <div class="field"><span class="k">provenance</span><span class="v">DERIVED<span class="tag derived">DERIVED</span></span></div>
+      <div class="field"><span class="k">formula</span><span class="v">ANALYTICS_METHODS.md <small>#three-tier-capacity</small></span></div>
+      <div class="field"><span class="k">source_record_id</span><span class="v">work_centre 9</span></div>
+      <div class="field"><span class="k">calendar hours</span><span class="v">40.00 h<span class="tag measured">MEASURED</span></span></div>
+      <div class="field"><span class="k">available hours</span><span class="v">40.00 h<span class="tag derived">DERIVED</span></span></div>
+      <div class="field"><span class="k">effective hours</span><span class="v">35.24 h<span class="tag derived">DERIVED</span></span></div>
+      <div class="field"><span class="k">required hours</span><span class="v">35.88 h<span class="tag derived">DERIVED</span></span></div>
+    </div>
+    <div class="trace"><b>calculation_trace:</b> Utilization = required hours / effective hours × 100. &nbsp;·&nbsp; <b>assumptions:</b> [] — none needed for this figure. Buffer recommendations, by contrast, list theirs explicitly (e.g. <span class="tag assumed">ASSUMED</span> one weekly replenishment cycle, no item-specific lead time available).</div>
+  </div>
+
+  <!-- GATES -->
+  <div class="section-title">Two gates that stop a number from being invented</div>
+  <p class="section-sub">Bad input and missing evidence are handled structurally, not by convention.
+    Both gates fail closed: the result is withheld or refused rather than guessed.</p>
+
+  <div class="gate-grid">
+    <div class="gate-box">
+      <h4>Data-quality blocking scope</h4>
+      <span class="pill">GLOBAL_BLOCKING</span><span class="pill">ENTITY_BLOCKING</span><span class="pill">KPI_BLOCKING</span>
+      <p>A blocking finding removes exactly its declared scope from the calculation. A routing with missing
+        times withholds that item's KPI; unrelated items and work centres keep computing. Periods a KPI cannot
+        be computed for persist as SQL <code>NULL</code>, not zero
+        (<code>db/ddl/002_nullable_blocked_period_results.sql</code>).</p>
+      <div class="reject">blocked record → excluded at scope · never silently repaired · finding stays auditable</div>
+    </div>
+    <div class="gate-box">
+      <h4>Copilot evidence gate</h4>
+      <span class="pill">deterministic tool first</span><span class="pill">llm_used: false</span>
+      <p>The copilot never answers from the model's own knowledge. It runs deterministic tools against the
+        same read models as the dashboard; if any returns nothing, the request ends with
+        <code>insufficient_evidence: true</code> before a language model is called. With a key configured, the
+        model only rewrites the evidence bundle into prose, and the bundle is returned with it.</p>
+      <div class="reject">empty tool result → fixed refusal → no LLM call</div>
+    </div>
+  </div>
+
+  <!-- SCENARIO LEVERS -->
+  <div class="section-title">What each scenario lever is allowed to change</div>
+  <p class="section-sub">Interventions act on the physical state, never on the outcome. This is why a
+    buffer cannot fake a lead-time reduction, and why a capacity increase shows up with a lag.</p>
+
+  <div class="stack">
+    <div class="stack-row"><div class="lbl">demand_multiplier</div><div class="body">Scales CAB-100 planning demand (the story uses +40 %). The extra demand is netted through the multi-level BOM, so load lands on subassembly work centres such as welding, not only on the finished-good route.</div></div>
+    <div class="stack-row"><div class="lbl">capacity_multiplier</div><div class="body">Raises effective hours from the intervention week onward. It does not alter routing processing standards or any period before it. Queue time falls only as backlog actually drains.</div></div>
+    <div class="stack-row"><div class="lbl">buffer_boost_per_item</div><div class="body">A one-time addition to opening inventory upstream of the constraint. It reduces net production requirement; it creates no processing capacity and leaves processing time untouched.</div></div>
+    <div class="stack-row"><div class="lbl">Calendar translation</div><div class="body">A multiplier is converted into the work centre's own calendar: Welding 1 runs 1 shift × 8 h × 5 days = 40 h/week; the 12-week recovery at 1.10× is 44 scheduled h/week (+4 h, ≈ 48 min per workday). Arithmetic only — staffing and equipment feasibility need plant validation.</div></div>
+    <div class="stack-row"><div class="lbl">Persistence</div><div class="body"><code>scenario_runs</code> stores <code>parameters_json</code> and seed; <code>period_engine_results</code> and <code>material_requirements</code> keep every week's state. Reference cases are reused on restart; custom runs are append-only.</div></div>
+  </div>
+
+  <!-- LAYERING -->
+  <div class="section-title">Dependency direction</div>
+  <p class="section-sub">One-way. Routes shape responses; the analytics core takes DataFrames and returns
+    dataclasses; only two modules talk to SQL Server.</p>
+
+  <div class="stack">
+    <div class="stack-row"><div class="lbl">frontend/src/</div><div class="body">React + Plotly dashboard and Evidence Drawer. Obtains every visible number from the API; computes nothing itself.</div></div>
+    <div class="stack-row"><div class="lbl">app/main.py · app/api.py</div><div class="body">FastAPI routes — pages, scenarios, Executive Story, copilot. Pydantic bounds on every request; no planning logic in routes.</div></div>
+    <div class="stack-row"><div class="lbl">analytics/dashboard.py</div><div class="body">Read models for the nine pages; runs and caches the five reference cases once per process; attaches evidence to every metric, point and row.</div></div>
+    <div class="stack-row"><div class="lbl">analytics/ — state</div><div class="body"><code>period_engine</code> · <code>constraint</code> · <code>leadtime</code> · <code>buffers</code> · <code>reconciliation</code> — the weekly simulation and everything derived from its state.</div></div>
+    <div class="stack-row"><div class="lbl">analytics/ — planning</div><div class="body"><code>forecast</code> · <code>bom</code> · <code>mrp</code> · <code>netting</code> · <code>capacity</code> — pure functions over DataFrames, no I/O.</div></div>
+    <div class="stack-row"><div class="lbl">dq/ · analytics/blocking.py</div><div class="body">Twenty rules, classified findings, and the scoped blocking index the planning core consults before trusting a record.</div></div>
+    <div class="stack-row"><div class="lbl">data_access · scenario_store</div><div class="body">The only SQL boundary: load all source tables, write findings, persist and reuse scenario runs.</div></div>
+    <div class="stack-row"><div class="lbl">db/ddl/ · SQL Server 2022</div><div class="body">Authoritative schema: 28 tables, foreign keys, indexes, effective-dated BOM and routing versions. Runs locally in Docker.</div></div>
+    <div class="stack-row"><div class="lbl">synthetic/ · loader/</div><div class="body">Offline only: deterministic seeded generator with a planted-defect manifest, then an FK-ordered, ID-preserving load into SQL Server.</div></div>
+  </div>
+
+  <!-- NOT YET -->
+  <div class="section-title">Not yet built</div>
+  <p class="section-sub">Listed so the diagram above is read at its true coverage.</p>
+
+  <div class="stack">
+    <div class="stack-row gap"><div class="lbl">Measured lead time</div><div class="body">Historical stage lead times from actual operation timestamps, shown next to the modelled ones.</div></div>
+    <div class="stack-row gap"><div class="lbl">M3 source mapping</div><div class="body">Mapping from M3 tables to this schema, a <code>.bak</code> restore runbook, and a data-request completeness check.</div></div>
+    <div class="stack-row gap"><div class="lbl">Integration concept</div><div class="body">ERP → SQL Server extract → analytical layer → Qlik Cloud / Bright Analytics, with the MES boundary and refresh cadence.</div></div>
+    <div class="stack-row gap"><div class="lbl">Security &amp; EU hosting</div><div class="body">Read-only database login, encryption at rest, API authentication, pseudonymised customers, EU-only processing for the copilot.</div></div>
+    <div class="stack-row gap"><div class="lbl">Cost &amp; policy</div><div class="body">Buffer capital versus capacity cost, planning-policy fit per item, and T-SQL views for BI consumption.</div></div>
+  </div>
+
+  <footer>
+    <span>manufacturing-analytics-pilot · docs/architecture.html</span>
+    <span>Synthetic seed-42 data · decision support, not a production system</span>
+  </footer>
+
+</div>
+
+<div id="example-tooltip" role="tooltip"></div>
+
+<script>
+(function () {
+  var tooltip = document.getElementById('example-tooltip');
+  var nodes = document.querySelectorAll('.node[data-example]');
+  var current = null;
+
+  function splitSource(text) {
+    var lines = text.split('\n');
+    var last = lines[lines.length - 1];
+    if (/^[\w./-]+\.(py|md|html|sql|tsx?):\d+$/.test(last.trim())) {
+      lines.pop();
+      while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+      return { body: lines.join('\n'), src: last.trim() };
+    }
+    return { body: text, src: null };
+  }
+
+  function show(el) {
+    var parsed = splitSource(el.getAttribute('data-example'));
+    tooltip.textContent = parsed.body;
+    if (parsed.src) {
+      var src = document.createElement('span');
+      src.className = 'src';
+      src.textContent = parsed.src;
+      tooltip.appendChild(src);
+    }
+    tooltip.classList.add('visible');
+    current = el;
+    position(el);
+  }
+
+  function hide() {
+    tooltip.classList.remove('visible');
+    current = null;
+  }
+
+  function position(el) {
+    var r = el.getBoundingClientRect();
+    var tw = tooltip.offsetWidth || 400;
+    var th = tooltip.offsetHeight || 120;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var left = Math.max(12, Math.min(r.left + r.width / 2 - tw / 2, vw - tw - 12));
+    var top = r.bottom + 10;
+    if (top + th > vh - 12) top = r.top - th - 10;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = Math.max(12, top) + 'px';
+  }
+
+  nodes.forEach(function (el) {
+    el.addEventListener('mouseenter', function () { show(el); });
+    el.addEventListener('mouseleave', hide);
+    el.addEventListener('focus', function () { show(el); });
+    el.addEventListener('blur', hide);
+    el.addEventListener('click', function () {
+      if (current === el) { hide(); } else { show(el); }
+    });
+  });
+
+  window.addEventListener('scroll', function () { if (current) position(current); }, true);
+  window.addEventListener('resize', function () { if (current) position(current); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
+})();
+</script>
+</body>
+</html>
