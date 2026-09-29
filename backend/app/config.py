@@ -8,7 +8,11 @@ ANALYTICS_METHODS.md and the Evidence Drawer can cite a single source for
 from __future__ import annotations
 
 import os
+from urllib.parse import quote_plus
 from dataclasses import dataclass
+
+
+DEMO_DEFAULT_PASSWORD = "DevOnly_ChangeMe_123!"
 
 
 @dataclass(frozen=True)
@@ -17,10 +21,19 @@ class Settings:
     mssql_host: str = os.environ.get("MSSQL_HOST", "localhost")
     mssql_port: int = int(os.environ.get("MSSQL_PORT", "1433"))
     mssql_database: str = os.environ.get("MSSQL_DATABASE", "mfg_analytics_pilot")
+    # APP_PROFILE=demo (local synthetic demo, permissive) or secured (see SECURITY.md and
+    # app/security.py: explicit credentials, API keys, least-privilege SQL login, LLM opt-in).
+    app_profile: str = os.environ.get("APP_PROFILE", "demo")
     mssql_user: str = os.environ.get("MSSQL_USER", "sa")
-    mssql_password: str = os.environ.get("MSSQL_SA_PASSWORD", "DevOnly_ChangeMe_123!")
+    # The dev default applies only to the demo profile; security.validate_settings rejects it when secured.
+    mssql_password: str = (os.environ.get("MSSQL_PASSWORD") or os.environ.get("MSSQL_SA_PASSWORD")
+                           or (DEMO_DEFAULT_PASSWORD if os.environ.get("APP_PROFILE", "demo") == "demo" else ""))
     anthropic_api_key: str | None = os.environ.get("ANTHROPIC_API_KEY") or None
     anthropic_model: str = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+    allow_external_llm: bool = os.environ.get("ALLOW_EXTERNAL_LLM", "").lower() == "true"
+    reader_api_keys: tuple[str, ...] = tuple(k for k in os.environ.get("PILOT_READER_API_KEYS", "").split(",") if k)
+    operator_api_keys: tuple[str, ...] = tuple(k for k in os.environ.get("PILOT_OPERATOR_API_KEYS", "").split(",") if k)
+    allowed_origins: tuple[str, ...] = tuple(o for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o)
 
     # --- Synthetic data generation ---
     synthetic_seed: int = int(os.environ.get("SYNTHETIC_DATA_SEED", "42"))
@@ -62,7 +75,7 @@ class Settings:
     def mssql_odbc_url(self) -> str:
         driver = "ODBC Driver 18 for SQL Server"
         return (
-            f"mssql+pyodbc://{self.mssql_user}:{self.mssql_password}"
+            f"mssql+pyodbc://{quote_plus(self.mssql_user)}:{quote_plus(self.mssql_password)}"
             f"@{self.mssql_host}:{self.mssql_port}/{self.mssql_database}"
             f"?driver={driver.replace(' ', '+')}&TrustServerCertificate=yes"
         )
@@ -73,7 +86,7 @@ class Settings:
         (which itself creates the target database)."""
         driver = "ODBC Driver 18 for SQL Server"
         return (
-            f"mssql+pyodbc://{self.mssql_user}:{self.mssql_password}"
+            f"mssql+pyodbc://{quote_plus(self.mssql_user)}:{quote_plus(self.mssql_password)}"
             f"@{self.mssql_host}:{self.mssql_port}/master"
             f"?driver={driver.replace(' ', '+')}&TrustServerCertificate=yes"
         )

@@ -13,6 +13,7 @@ from app.analytics.buffers import recommend_buffers
 from app.analytics.cost import (MISSING, OVERLAPPING, VALUED, CostAssumptions, case_economics,
                                 five_case_summary, unit_costs)
 from app.analytics.data_access import load_all_tables, write_consumption_audit
+from app.analytics.data_version import data_version
 from app.analytics.evidence import evidence, json_value, source
 from app.analytics.forecast import (CONSUMPTION_POLICY, compute_accuracy_by_horizon, consume_forecast,
                                     realized_wape_by_item, reconstruct_forecast_history)
@@ -24,6 +25,7 @@ from app.config import settings
 from app.db.connection import get_engine
 from app.dq import summary as dq_summary
 from app.dq.engine import findings_to_dataframe, run_all
+from app.synthetic.run_generator import TABLE_ORDER as SOURCE_TABLES
 from app.synthetic.timeline import REFERENCE_DATE
 
 HORIZON = tuple(REFERENCE_DATE + dt.timedelta(weeks=w) for w in range(12))
@@ -65,6 +67,7 @@ def _build_context():
     engine = get_engine()
     tables = source_tables()
     comparison = run_four_intervention_comparison(tables, list(HORIZON), demand_multiplier=1.4)
+    comparison["data_version"] = data_version(tables, SOURCE_TABLES)
     run_ids = {}
     write_consumption_audit(engine, consumption_events(tables))
     for case in CASES:
@@ -75,7 +78,8 @@ def _build_context():
                   "intervention_start_week": comparison["intervention_start_week"]}
         intervention = case if case in {"BUFFER_ONLY", "CAPACITY_ONLY", "COMBINED"} else "NONE"
         run_ids[case] = ensure_run(engine, case, params, comparison[case], intervention,
-                                   recommend_buffers(tables, comparison[case]) if case == "DEMAND_SHOCK_ONLY" else [])
+                                   recommend_buffers(tables, comparison[case]) if case == "DEMAND_SHOCK_ONLY" else [],
+                                   comparison["data_version"])
     comparison["run_ids"] = run_ids
     comparison["economics"] = compute_economics(tables, comparison)
     for case in CASES:
@@ -321,7 +325,8 @@ def scenarios():
     return {"title": "Scenario Lab", "metrics": [metric("Compared cases", len(rows),
                 "ANALYTICS_METHODS.md#scenario-comparison", [source("case names", list(CASES), "scenario_runs", "DERIVED")])],
             "series": rows, "series_label": "Final backlog by scenario", "unit": "hours", "rows": rows,
-            "intervention_start_week": runs["intervention_start_week"].isoformat()}
+            "intervention_start_week": runs["intervention_start_week"].isoformat(),
+            "data_version": runs.get("data_version")}
 
 
 def data_quality():
@@ -537,7 +542,8 @@ def decision_economics():
     return {"title": "Decision Economics", "metrics": metrics, "series": rows,
             "series_label": f"Period expense per case ({a.currency}): inventory carrying + added paid hours",
             "unit": a.currency, "rows": rows, "total_rows": len(rows), "assumptions": a.as_dict(),
-            "comparison_case": "DEMAND_SHOCK_ONLY", "data_origin": "SYNTHETIC"}
+            "comparison_case": "DEMAND_SHOCK_ONLY", "data_origin": "SYNTHETIC",
+            "data_version": runs.get("data_version")}
 
 
 POLICY_THRESHOLDS = PolicyThresholds()

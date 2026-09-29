@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.analytics import dashboard, parameter_export, stage_history
@@ -13,10 +13,11 @@ from app.analytics.evidence import evidence, json_value, source
 from app.analytics.period_engine import run_period_engine
 from app.analytics.scenario_demo import build_engine_inputs, cab100_item_ids, items_loading_work_centres
 from app.analytics.scenario_store import save_run
+from app import security
 from app.config import settings
 from app.db.connection import get_engine
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(security.require_reader)])
 
 
 def _page(slug: str, item_id: int | None = None):
@@ -103,7 +104,7 @@ class ScenarioRequest(BaseModel):
     intervention_start_week: int = Field(default=4, ge=1, le=12)
 
 
-@router.post("/api/scenarios/run")
+@router.post("/api/scenarios/run", dependencies=[Depends(security.require_operator)])
 def run_scenario(request: ScenarioRequest):
     try:
         tables, comparison = dashboard.context()
@@ -122,7 +123,8 @@ def run_scenario(request: ScenarioRequest):
                              "BUFFER_ONLY" if request.buffer_boost_per_item else
                              "CAPACITY_ONLY" if request.capacity_multiplier > 1 else "NONE")
         recs = recommend_buffers(tables, result)
-        run_id = save_run(get_engine(), request.name, request.model_dump(), result, intervention_type, recs)
+        run_id = save_run(get_engine(), request.name, request.model_dump(), result, intervention_type, recs,
+                          comparison.get("data_version"))
         final = [r for r in result.work_centre_results if r.period_start_date == dashboard.HORIZON[-1]]
         backlog = sum(r.backlog_hours_end for r in final)
         return {"run_id": run_id, "intervention_type": intervention_type,
@@ -255,7 +257,7 @@ def _requested_tools(request: CopilotRequest) -> list[str]:
     return chosen
 
 
-@router.post("/copilot/ask")
+@router.post("/copilot/ask", dependencies=[Depends(security.require_operator)])
 def copilot_ask(request: CopilotRequest):
     bundle = []
     for tool_name in _requested_tools(request):
@@ -264,7 +266,7 @@ def copilot_ask(request: CopilotRequest):
             return {"answer": f"Insufficient evidence to answer — no matching data was returned by {tool} for {request.question}.",
                     "tool": tool, "evidence": bundle, "llm_used": False, "insufficient_evidence": True}
         bundle.append({"tool": tool, "result": json_value(payload)})
-    if not settings.anthropic_api_key:
+    if not security.llm_allowed():
         return {"answer": "Deterministic evidence is available below.", "tool": bundle[0]["tool"],
                 "evidence": bundle, "llm_used": False, "insufficient_evidence": False}
     try:
@@ -272,7 +274,7 @@ def copilot_ask(request: CopilotRequest):
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         response = client.messages.create(model=settings.anthropic_model, max_tokens=350,
             system="Explain only the supplied deterministic evidence. Do not invent or calculate metrics. State limitations plainly.",
-            messages=[{"role": "user", "content": f"Question: {request.question}\nEvidence: {bundle}"}])
+            messages=[{"role": "user", "content": f"Question: {request.question}\nEvidence: {security.minimise_for_llm(bundle)}"}])
         answer = " ".join(block.text for block in response.content if block.type == "text")
         return {"answer": answer, "tool": bundle[0]["tool"], "evidence": bundle,
                 "llm_used": True, "insufficient_evidence": False}

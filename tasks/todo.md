@@ -158,18 +158,20 @@ Matrix: docs/REQUIREMENTS_COMPLETION_MATRIX.md. Fresh baseline: 95 tests pass.
 - Verified 2026-09-29: cost/policy/export tests; five cases persisted to cost_results (runs 2–6); browser pages
 - Finding: policy evidence insufficient for 127/140 FG at default thresholds (few orders / completed POs)
 ### Stage 4 — Integration, SQL, restore, security
-- [ ] DATA_REQUEST.md + request contract (YAML/JSON) + checker CLI (pass/warn/block)
-- [ ] M3_MAPPING.md — every M3 name marked HYPOTHESIS/PENDING unless verified
-- [ ] integrations/: ERPAdapter, BIExportAdapter, MESAdapter protocols + simulated file adapters + contract tests
-- [ ] INTEGRATION.md (Mermaid, ownership, cadence, late data, retry, incremental extraction)
-- [ ] db/ddl/100_read_models.sql: CREATE OR ALTER views (forecast accuracy, weekly load, stage elapsed);
+- [x] DATA_REQUEST.md + request contract (YAML/JSON) + checker CLI (pass/warn/block)
+- [x] M3_MAPPING.md — every M3 name marked HYPOTHESIS/PENDING unless verified
+- [x] integrations/: ERPAdapter, BIExportAdapter, MESAdapter protocols + simulated file adapters + contract tests
+- [x] INTEGRATION.md (Mermaid, ownership, cadence, late data, retry, incremental extraction)
+- [x] db/ddl/100_read_models.sql: CREATE OR ALTER views (forecast accuracy, weekly load, stage elapsed);
       SQL/Python parity tests against the running SQL Server
-- [ ] scripts/restore/: VERIFYONLY / FILELISTONLY / RESTORE WITH MOVE, refuses existing DB, validated identifiers;
+- [x] scripts/restore/: VERIFYONLY / FILELISTONLY / RESTORE WITH MOVE, refuses existing DB, validated identifiers;
       round trip into a new disposable DB name; RUNBOOK
-- [ ] Secured profile: compose override without default password, localhost-bound ports, API key/role auth
+- [x] Secured profile: compose override without default password, localhost-bound ports, API key/role auth
       on mutations; SQL logins pilot_reader (views only) / pilot_app (scenario tables); least-privilege test;
       LLM disabled unless ALLOW_EXTERNAL_LLM=true; SECURITY.md
-- [ ] Data-version identity (hash of source table checksums + code version) in scenario_runs reuse key
+- [x] Data-version identity (hash of source table checksums + code version) in scenario_runs reuse key
+- Verified 2026-09-29T06:18Z: full suite 182 passed / 0 skipped; restore round trip; secured instance; least privilege
+- Note: read models live in db/migrations/100_read_models.sql; restore tool is app/db/restore.py (not scripts/restore/)
 ### Stage 5 — Verification + docs
 - [ ] Fix 2.5× wording (PLAN.md, LIMITATIONS.md); refresh PILOT_FINDINGS from live run
 - [ ] Full backend suite + `npm run build` + browser walkthrough; update matrix with commands/results

@@ -16,7 +16,8 @@ def _sql_number(value):
 
 
 def save_run(engine: sa.Engine, name: str, parameters: dict, output,
-             intervention_type: str = "NONE", recommendations: list[dict] | None = None) -> int:
+             intervention_type: str = "NONE", recommendations: list[dict] | None = None,
+             data_version: str | None = None) -> int:
     """Append an auditable run. A failed insert rolls back all result tables."""
     allowed = {"NONE", "BUFFER_ONLY", "CAPACITY_ONLY", "COMBINED"}
     if intervention_type not in allowed:
@@ -32,7 +33,8 @@ def save_run(engine: sa.Engine, name: str, parameters: dict, output,
     with engine.begin() as conn:
         run_id = conn.execute(runs.insert().values(
             name=name, parameters_json=parameters_json, is_baseline=(name == "BASELINE"),
-            intervention_type=intervention_type, seed=settings.synthetic_seed)).inserted_primary_key[0]
+            intervention_type=intervention_type, seed=settings.synthetic_seed,
+            **({"data_version": data_version} if "data_version" in runs.c else {}))).inserted_primary_key[0]
         if output.material_results:
             conn.execute(materials.insert(), [{"run_id": run_id, "item_id": r.item_id,
                 "period_start_date": r.period_start_date, "gross_requirement": r.gross_requirement,
@@ -57,17 +59,21 @@ def save_run(engine: sa.Engine, name: str, parameters: dict, output,
     return int(run_id)
 
 
-def ensure_run(engine: sa.Engine, name: str, parameters: dict, output,
-               intervention_type: str = "NONE", recommendations: list[dict] | None = None) -> int:
-    """Reuse a matching seeded run so API restarts do not duplicate golden cases."""
+def ensure_run(engine: sa.Engine, name: str, parameters: dict, output, intervention_type: str = "NONE",
+               recommendations: list[dict] | None = None, data_version: str | None = None) -> int:
+    """Reuse a run only when name, parameters, seed AND data version (source data + code) all match,
+    so API restarts do not duplicate golden cases but changed inputs never serve a stale result."""
     parameters_json = json.dumps(json_value(parameters), sort_keys=True)
-    with engine.connect() as conn:
-        existing = conn.execute(sa.text("SELECT TOP 1 run_id FROM scenario_runs WHERE name = :name "
-                                        "AND parameters_json = :parameters AND seed = :seed ORDER BY run_id DESC"),
-                                {"name": name, "parameters": parameters_json,
-                                 "seed": settings.synthetic_seed}).scalar()
+    existing = None
+    if data_version is not None:
+        with engine.connect() as conn:
+            existing = conn.execute(sa.text("SELECT TOP 1 run_id FROM scenario_runs WHERE name = :name "
+                                            "AND parameters_json = :parameters AND seed = :seed "
+                                            "AND data_version = :version ORDER BY run_id DESC"),
+                                    {"name": name, "parameters": parameters_json, "seed": settings.synthetic_seed,
+                                     "version": data_version}).scalar()
     return int(existing) if existing is not None else save_run(engine, name, parameters, output,
-                                                                intervention_type, recommendations)
+                                                                intervention_type, recommendations, data_version)
 
 
 def save_cost_results(engine: sa.Engine, run_id: int, results: list[dict]) -> int:

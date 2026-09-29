@@ -1,0 +1,29 @@
+# Secured profile override. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.secured.yml up -d sqlserver api
+# Every ${VAR:?} below must be supplied from the environment or a secret store; there are no defaults.
+# This file is a local control, not evidence of an EU deployment (see docs/SECURITY.md).
+services:
+  sqlserver:
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD (administrator, used only for setup)}
+    ports: !override
+      - "127.0.0.1:1433:1433"
+
+  api:
+    environment:
+      APP_PROFILE: secured
+      MSSQL_USER: pilot_app
+      MSSQL_PASSWORD: ${PILOT_APP_PASSWORD:?set PILOT_APP_PASSWORD (created by app.db.security_setup)}
+      MSSQL_SA_PASSWORD: ""
+      PILOT_READER_API_KEYS: ${PILOT_READER_API_KEYS:?set at least one reader API key (>= 24 chars)}
+      PILOT_OPERATOR_API_KEYS: ${PILOT_OPERATOR_API_KEYS:?set at least one operator API key (>= 24 chars)}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set the permitted browser origins}
+      ALLOW_EXTERNAL_LLM: ${ALLOW_EXTERNAL_LLM:-false}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  # The browser dashboard cannot hold an API key without leaking it into the JavaScript bundle, so it
+  # is not started in this profile. A secured UI needs an authenticating reverse proxy or SSO in front.
+  frontend:
+    profiles: ["never-in-secured"]

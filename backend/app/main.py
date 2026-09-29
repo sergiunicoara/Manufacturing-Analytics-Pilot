@@ -3,7 +3,7 @@ import datetime as dt
 from functools import lru_cache
 
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.analytics.data_access import load_all_tables
@@ -13,7 +13,9 @@ from app.analytics.scenario_demo import (
 )
 from app.db.connection import get_engine
 from app.synthetic.timeline import REFERENCE_DATE
+from app import security
 from app.api import router
+from app.config import settings
 from app.analytics.dashboard import context
 from app.analytics.evidence import evidence, source
 
@@ -23,13 +25,17 @@ app = FastAPI(
     "fictional; this is not connected to any real ERP/MES/BI system.",
 )
 
-# Local-only synthetic demo, not a production deployment — wide open CORS is
-# fine here and avoids hardcoding the frontend dev-server port.
+_problems = security.validate_settings()
+if _problems:
+    raise RuntimeError("Refusing to start the secured profile: " + "; ".join(_problems))
+
+# Demo profile: local synthetic data only, so open CORS avoids hardcoding the dev-server port.
+# Secured profile: only the configured origins, and only the methods and header the API uses.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=list(settings.allowed_origins) if security.is_secured() else ["*"],
+    allow_methods=["GET", "POST"] if security.is_secured() else ["*"],
+    allow_headers=["Content-Type", "X-API-Key"] if security.is_secured() else ["*"],
 )
 app.include_router(router)
 
@@ -39,7 +45,7 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/api/executive-story")
+@app.get("/api/executive-story", dependencies=[Depends(security.require_reader)])
 @lru_cache(maxsize=1)
 def executive_story() -> dict:
     """Calibrated 12-week CAB-100 story, with auditable weekly lead-time series."""
