@@ -1,0 +1,34 @@
+<section id="tests" data-transition="fade" style="background:#16202E; color:#F3F1EB; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:44px">
+<div style="display:flex; flex-direction:column; gap:24px">
+<div style="display:flex; align-items:center; gap:24px">
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#16202E; background:#F28C4E; padding:8px 20px; border-radius:8px">Screen</p>
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#F28C4E">Automated proof</p>
+</div>
+<h2 style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#F3F1EB">The whole model re-proves itself with one command</h2>
+</div>
+<div style="display:flex; flex-direction:column; gap:16px; background:#0E1621; padding:32px; border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; color:#E6EDF3"><span style="color:#F28C4E">$</span> docker exec mfg_pilot_api python -m pytest -q</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; color:#E6EDF3"><span style="color:#F28C4E">$</span> git log --oneline</p>
+</div>
+<div style="display:flex; flex-wrap:wrap; gap:16px">
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">BOM recursion and cycles</p>
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">MRP netting golden cases</p>
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">No double-counted forecast</p>
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">Queue formula has no jump at 100%</p>
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">Constraint classification rules</p>
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">Flow conservation</p>
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">A buffer cannot create capacity</p>
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">Planted defects all detected</p>
+<p style="font-size:26px; color:#E6EDF3; background:#1F2B3B; padding:12px 24px; border-radius:8px">Seeded data reproducible</p>
+</div>
+<p style="font-size:30px; line-height:1.4; color:#C3CCD6">[__] tests passing · built in checkpoints, each ending in a green suite and a commit</p>
+<p style="position:absolute; left:128px; bottom:64px; width:1664px; font-size:24px; color:#8E9AA8">16 / 19 · Screen recording · Automated proof</p>
+<aside>SCENE 16 · SCREEN RECORDING · 9:15–9:40
+ON SCREEN: Title card 3 seconds, then terminal.
+1. Run: docker exec mfg_pilot_api python -m pytest -q. Let it finish and hold on the final "N passed" line. Speed the middle up 4x in editing.
+2. Run: git log --oneline and hold on the checkpoint commits (CP1 to CP3.2 and beyond).
+BEFORE RECORDING: rebuild the api image first (docker compose build api) so the container runs the current code, then fill [__] with the actual count. It was 84 at CP3.2.
+
+VOICEOVER:
+Everything you've seen is covered by automated tests: BOM recursion and cycles, netting golden cases, forecast consumption that never double-counts, a queue formula with no jump at a hundred percent utilization, the constraint rules, flow conservation, and the proof that a buffer cannot create capacity. One command re-proves the whole model. It was built in checkpoints, each one ending with a green test suite and a commit, which is how I would run your pilot too.</aside>
+</section>

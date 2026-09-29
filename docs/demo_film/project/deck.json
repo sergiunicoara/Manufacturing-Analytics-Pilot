@@ -1,0 +1,19 @@
+{
+  "v": 4,
+  "createdOnFiles": {"v": 1, "at": "2026-09-28T18:05:00Z"},
+  "title": "Manufacturing Analytics Pilot — Demo Film",
+  "order": ["cover", "brief", "honesty", "architecture", "setup", "dq", "dqscreen", "bom", "forecast", "capacity", "shock", "interventions", "proof", "shifts", "leadtime", "tests", "integration", "eightweeks", "close"],
+  "sections": {
+    "s1": {"description": "Why this film exists, what it maps to in the brief, and what is simulated", "start": "cover"},
+    "s2": {"description": "Getting ERP-shaped data into SQL Server and classifying every gap", "start": "setup"},
+    "s3": {"description": "The planning model: netting, forecast revisions, three-tier capacity", "start": "bom"},
+    "s4": {"description": "A demand shock, one emergent constraint, and five physical responses compared", "start": "shock"},
+    "s5": {"description": "Proof, integration boundary and the eight-week plan", "start": "tests"}
+  },
+  "faces": {
+    "oswald": {"family": "Oswald", "href": "https://fonts.googleapis.com/css2?family=Oswald:wght@400..600&display=swap"},
+    "ibm-plex-sans": {"family": "IBM Plex Sans", "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap"},
+    "jetbrains-mono": {"family": "JetBrains Mono", "href": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap"}
+  },
+  "designSystems": []
+}

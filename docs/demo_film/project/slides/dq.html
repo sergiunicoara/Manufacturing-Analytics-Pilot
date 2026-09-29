@@ -1,0 +1,38 @@
+<section id="dq" data-transition="fade" style="background:#F3F1EB; color:#16202E; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:48px">
+<div style="display:flex; flex-direction:column; gap:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#B04A18">Data-gap register</p>
+<h2 style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#16202E">Every data gap gets a class and a scope</h2>
+</div>
+<div style="display:grid; grid-template-columns:880px 1fr; gap:64px">
+<div style="display:flex; flex-direction:column; gap:28px">
+<div style="display:flex; align-items:end; gap:24px">
+<p style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:120px; font-weight:500; line-height:1; color:#B04A18">641</p>
+<p style="font-size:30px; line-height:1.3; color:#3E4A59">findings across 13 defect types</p>
+</div>
+<div style="display:flex; height:48px; border-radius:8px; overflow:hidden">
+<div style="flex:563; background:#B04A18"></div>
+<div style="flex:52; background:#2F6690"></div>
+<div style="flex:26; background:#A9B3BF"></div>
+</div>
+<div style="display:flex; flex-direction:column; gap:12px">
+<p style="font-size:30px"><b>563 blocking</b><span style="color:#3E4A59"> · orange · excluded from the affected calculation</span></p>
+<p style="font-size:30px"><b>52 assumption-based</b><span style="color:#3E4A59"> · blue · used, with a stated assumption</span></p>
+<p style="font-size:30px"><b>26 tolerable</b><span style="color:#3E4A59"> · grey · used as is, logged</span></p>
+</div>
+</div>
+<div style="display:flex; flex-direction:column; gap:20px">
+<h3 style="font-size:40px; font-weight:600; line-height:1.2">Blocking is scoped, not global</h3>
+<p style="font-size:30px; line-height:1.4; color:#3E4A59">A bad routing blocks that item only. A zero-capacity week blocks that work centre's load for that week only.</p>
+<div style="display:flex; flex-direction:column; gap:12px; background:#FBFAF6; padding:32px; border:1px solid #DDD8CC; border-radius:16px">
+<p style="font-size:30px; line-height:1.4">12 of 13 planted defect types found exactly.</p>
+<p style="font-size:30px; line-height:1.4; color:#3E4A59">Missing cost records: 33 found vs 29 planted. The extra 4 stay in the register for review.</p>
+</div>
+</div>
+</div>
+<p style="position:absolute; left:128px; bottom:64px; width:1664px; font-size:24px; color:#5B6675">06 / 19 · Data-gap register</p>
+<aside>SCENE 6 · SLIDE · 2:50–3:30
+ON SCREEN: This slide.
+
+VOICEOVER:
+Your brief asks for every data gap to be documented and classed as tolerable, assumption-based or blocking. The rule engine does exactly that: 641 findings across thirteen defect types. The important design choice is scope. Blocking does not mean the whole analysis stops. A routing with missing times blocks that item's load, not the plant's. A week with zero capacity blocks that work centre's utilization for that week only. And because the defects were planted, I can prove detection: twelve of thirteen types match exactly. Missing cost records came back four higher than planted. I don't hide that; those four stay in the register for review.</aside>
+</section>

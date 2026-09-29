@@ -1,0 +1,32 @@
+<section id="dqscreen" data-transition="fade" style="background:#16202E; color:#F3F1EB; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:48px">
+<div style="display:flex; flex-direction:column; gap:24px">
+<div style="display:flex; align-items:center; gap:24px">
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#16202E; background:#F28C4E; padding:8px 20px; border-radius:8px">Screen</p>
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#F28C4E">Data-gap register</p>
+</div>
+<h2 style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#F3F1EB">Run the rules, then query the register in SQL</h2>
+</div>
+<div style="display:flex; flex-direction:column; gap:16px; background:#0E1621; padding:32px; border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; color:#E6EDF3"><span style="color:#F28C4E">$</span> docker exec mfg_pilot_api python -m app.dq.run_dq_engine</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; line-height:1.5; color:#9FD3C7">SELECT classification, rule_id, COUNT(*) AS findings<br>FROM dq_findings<br>GROUP BY classification, rule_id<br>ORDER BY findings DESC;</p>
+</div>
+<div style="display:flex; gap:24px">
+<div style="flex:1; display:flex; flex-direction:column; gap:8px; background:#1F2B3B; padding:28px; border-radius:16px">
+<h3 style="font-size:30px; font-weight:600; color:#F28C4E">Point at 1</h3>
+<p style="font-size:26px; line-height:1.4; color:#C3CCD6">The planted-to-found cross-check at the end of the run</p>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:8px; background:#1F2B3B; padding:28px; border-radius:16px">
+<h3 style="font-size:30px; font-weight:600; color:#F28C4E">Point at 2</h3>
+<p style="font-size:26px; line-height:1.4; color:#C3CCD6">One finding's record_id, traced back to its source row</p>
+</div>
+</div>
+<p style="position:absolute; left:128px; bottom:64px; width:1664px; font-size:24px; color:#8E9AA8">07 / 19 · Screen recording · Data-gap register</p>
+<aside>SCENE 7 · SCREEN RECORDING · 3:30–4:05
+ON SCREEN: Title card 3 seconds, then terminal.
+1. Run: docker exec mfg_pilot_api python -m app.dq.run_dq_engine. Pause on "By classification" and on the "planted -&gt; found" table.
+2. Switch to SSMS or Azure Data Studio (localhost,1433, database mfg_analytics_pilot). Run the GROUP BY query on the slide.
+3. Pick one row, for example rule_id = 'missing_routing_times'. Copy its record_id, open routing_operations and filter on it to show the empty time field.
+
+VOICEOVER:
+Here is the register being built. One command runs all twenty rules and writes each finding to SQL Server, with its rule, its entity, the exact record, a severity, a class and an origin. At the end the run cross-checks against the list of planted defects. In SQL, this is an ordinary table your ERP director can query and challenge. Every finding points at a record: here is one routing operation with a missing run time, and here it is in the source table.</aside>
+</section>

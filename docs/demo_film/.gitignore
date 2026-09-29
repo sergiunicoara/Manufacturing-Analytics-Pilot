@@ -1,0 +1,6 @@
+runs/
+out/*.mp4
+out/*.srt
+out/*.json
+work/
+assets/narration/

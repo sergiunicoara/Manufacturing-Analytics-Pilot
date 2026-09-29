@@ -1,0 +1,33 @@
+<section id="shock" data-transition="fade" style="background:#F3F1EB; color:#16202E; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:40px">
+<div style="display:flex; flex-direction:column; gap:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#B04A18">Scenario · CAB-100 demand +40%</p>
+<h2 style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#16202E">One demand shock, one constraint emerges</h2>
+</div>
+<div style="display:flex; gap:64px">
+<div style="width:520px; display:flex; flex-direction:column; gap:32px">
+<div style="display:flex; flex-direction:column; gap:4px"><p style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#B04A18">+69.6%</p><p style="font-size:26px; line-height:1.35; color:#3E4A59">welding hours over 10 weeks, 175 h → 296 h</p></div>
+<div style="display:flex; flex-direction:column; gap:4px"><p style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#B04A18">186% → 279%</p><p style="font-size:26px; line-height:1.35; color:#3E4A59">peak weekly welding utilization</p></div>
+<div style="display:flex; flex-direction:column; gap:4px"><p style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#B04A18">17 Aug</p><p style="font-size:26px; line-height:1.35; color:#3E4A59">WC-WELD-01 becomes the primary constraint; at baseline it never does</p></div>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:16px">
+<p style="font-size:26px"><span style="color:#B04A18"><b>━ Shock</b></span> 340.8 h in week 16    <span style="color:#5B6675"><b>━ Baseline</b></span> 116.6 h</p>
+<svg aria-label="Line chart of welding backlog hours at week end over 16 weeks. Baseline rises from 0 to 116.6 hours; the +40% CAB-100 shock rises from 0 to 340.8 hours." width="1040" height="440" viewBox="0 0 1040 440" xmlns="http://www.w3.org/2000/svg">
+<line x1="20" y1="420" x2="1020" y2="420" stroke="#A9B3BF" stroke-width="2"/>
+<line x1="20" y1="305.7" x2="1020" y2="305.7" stroke="#DDD8CC" stroke-width="1.5" stroke-dasharray="6 6"/>
+<line x1="20" y1="191.4" x2="1020" y2="191.4" stroke="#DDD8CC" stroke-width="1.5" stroke-dasharray="6 6"/>
+<line x1="20" y1="77.1" x2="1020" y2="77.1" stroke="#DDD8CC" stroke-width="1.5" stroke-dasharray="6 6"/>
+<polyline fill="none" stroke="#5B6675" stroke-width="5" stroke-linejoin="round" points="20,420 86.7,420 153.3,420 220,420 286.7,420 353.3,414.5 420,420 486.7,397.5 553.3,420 620,387.1 686.7,359.4 753.3,369.6 820,314.1 886.7,332.1 953.3,307.5 1020,286.7"/>
+<polyline fill="none" stroke="#B04A18" stroke-width="6" stroke-linejoin="round" points="20,420 86.7,420 153.3,420 220,420 286.7,395 353.3,372.1 420,386.6 486.7,332.8 553.3,370.4 620,304 686.7,253.1 753.3,252.3 820,155.5 886.7,159.4 953.3,74.4 1020,30.5"/>
+<circle cx="1020" cy="30.5" r="9" fill="#B04A18"/>
+<circle cx="1020" cy="286.7" r="9" fill="#5B6675"/>
+</svg>
+<p style="font-size:24px; color:#5B6675">Welding backlog hours at week end · weeks 1–16 · dashed lines at 100, 200, 300 h</p>
+</div>
+</div>
+<p style="position:absolute; left:128px; bottom:64px; width:1664px; font-size:24px; color:#5B6675">11 / 19 · Scenario · The constraint is found by comparing runs, not chosen in advance</p>
+<aside>SCENE 11 · SLIDE (or SCREEN) · 6:00–6:40
+ON SCREEN: This slide. Optional cut-in: terminal, python -m app.analytics.run_cp3_2_report, sections 4 and 5, the shock-vs-baseline weekly trace.
+
+VOICEOVER:
+Now the question your pilot is really about: what happens when a customer's forecast changes? I raise demand for the CAB-100 cabinet family by forty percent and run the weekly simulation. The engine is not told which work centre to watch. It compares the shocked run with the baseline and reports what newly becomes a constraint. Here that is welding: required hours up nearly seventy percent, peak weekly utilization from 186 to 279 percent, and from mid-August WC-WELD-01 is the primary constraint. Notice the grey line too. The baseline itself is not perfectly flat; I show that rather than hide it.</aside>
+</section>

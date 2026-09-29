@@ -1,0 +1,37 @@
+<section id="bom" data-transition="fade" style="background:#F3F1EB; color:#16202E; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:48px">
+<div style="display:flex; flex-direction:column; gap:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#B04A18">BOMs and material netting</p>
+<h2 style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#16202E">Net requirements, level by level</h2>
+</div>
+<div style="display:grid; grid-template-columns:760px 1fr; gap:80px">
+<div style="display:flex; flex-direction:column; align-items:stretch; gap:0px">
+<div style="display:flex; flex-direction:column; gap:8px; background:#FBFAF6; padding:28px 32px; border:1px solid #DDD8CC; border-radius:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:#5B6675">Level 0 · demand</p>
+<p style="font-size:30px">100 parent units, 1 frame each</p>
+</div>
+<x-shape kind="arrow-down" style="align-self:center; width:40px; height:56px; background:#B04A18"></x-shape>
+<div style="display:flex; flex-direction:column; gap:8px; background:#FBFAF6; padding:28px 32px; border:1px solid #DDD8CC; border-radius:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:#5B6675">Level 1 · frame</p>
+<p style="font-size:30px">100 needed − 80 on hand = <b>build 20</b></p>
+</div>
+<x-shape kind="arrow-down" style="align-self:center; width:40px; height:56px; background:#B04A18"></x-shape>
+<div style="display:flex; flex-direction:column; gap:8px; background:#16202E; padding:28px 32px; border-radius:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:#C3CCD6">Level 2 and below</p>
+<p style="font-size:30px; color:#F3F1EB">Exploded for 20 frames, not 100</p>
+</div>
+</div>
+<ul style="font-size:30px; line-height:1.4; color:#3E4A59; display:flex; flex-direction:column; gap:20px">
+<li>Items are netted in low-level-code order, across all 7 levels</li>
+<li>A shared part collects demand from every parent before it is netted once</li>
+<li>BOM revisions are effective-dated; overlaps are flagged</li>
+<li>Cycles and orphan components raise a finding, never a silent zero</li>
+<li>Every requirement keeps its lineage to the source BOM records</li>
+</ul>
+</div>
+<p style="position:absolute; left:128px; bottom:64px; width:1664px; font-size:24px; color:#5B6675">08 / 19 · BOMs and material netting</p>
+<aside>SCENE 8 · SLIDE · 4:05–4:40
+ON SCREEN: This slide. Optional cut-in: tests/test_mrp_netting.py, the golden test for the 80-frames case.
+
+VOICEOVER:
+A common mistake in this kind of model is exploding gross demand through the whole BOM, as if every level were always built from scratch. That overstates load at every work centre. Here, each level is netted first. A hundred parent units need a hundred frames; eighty are already on hand, so only twenty are built, and only twenty frames' worth of parts cascade further down. Shared parts collect demand from every parent before they are netted once. Revisions are effective-dated, and a cycle or an orphan component raises a finding. The model never quietly substitutes a zero.</aside>
+</section>

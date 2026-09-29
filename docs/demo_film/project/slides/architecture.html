@@ -1,0 +1,51 @@
+<section id="architecture" data-transition="fade" style="background:#F3F1EB; color:#16202E; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:56px">
+<div style="display:flex; flex-direction:column; gap:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#B04A18">Architecture</p>
+<h2 style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#16202E">One pipeline, re-runnable end to end</h2>
+</div>
+<div style="display:flex; align-items:center; gap:16px">
+<div style="flex:1; display:flex; flex-direction:column; gap:12px; background:#FBFAF6; padding:28px; border:1px solid #DDD8CC; border-radius:16px">
+<h3 style="font-size:30px; font-weight:600; line-height:1.2">ERP extracts</h3>
+<p style="font-size:24px; line-height:1.35; color:#3E4A59">M3-shaped files, deliberately dirty</p>
+</div>
+<x-connector style="width:48px; color:#B04A18"></x-connector>
+<div style="flex:1; display:flex; flex-direction:column; gap:12px; background:#FBFAF6; padding:28px; border:1px solid #DDD8CC; border-radius:16px">
+<h3 style="font-size:30px; font-weight:600; line-height:1.2">SQL Server 2022</h3>
+<p style="font-size:24px; line-height:1.35; color:#3E4A59">Docker, T-SQL schema, loader</p>
+</div>
+<x-connector style="width:48px; color:#B04A18"></x-connector>
+<div style="flex:1; display:flex; flex-direction:column; gap:12px; background:#FBFAF6; padding:28px; border:1px solid #DDD8CC; border-radius:16px">
+<h3 style="font-size:30px; font-weight:600; line-height:1.2">Quality rules</h3>
+<p style="font-size:24px; line-height:1.35; color:#3E4A59">20-rule registry, scoped findings</p>
+</div>
+<x-connector style="width:48px; color:#B04A18"></x-connector>
+<div style="flex:1; display:flex; flex-direction:column; gap:12px; background:#FBFAF6; padding:28px; border:1px solid #DDD8CC; border-radius:16px">
+<h3 style="font-size:30px; font-weight:600; line-height:1.2">Planning core</h3>
+<p style="font-size:24px; line-height:1.35; color:#3E4A59">Pure Python, weekly stepped</p>
+</div>
+<x-connector style="width:48px; color:#B04A18"></x-connector>
+<div style="flex:1; display:flex; flex-direction:column; gap:12px; background:#16202E; padding:28px; border:1px solid #16202E; border-radius:16px">
+<h3 style="font-size:30px; font-weight:600; line-height:1.2; color:#F3F1EB">Decisions</h3>
+<p style="font-size:24px; line-height:1.35; color:#C3CCD6">Each with its evidence trail</p>
+</div>
+</div>
+<div style="display:flex; flex-direction:column; gap:20px">
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#5B6675">Inside the planning core</p>
+<div style="display:flex; flex-wrap:wrap; gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; background:#E6E1D6; padding:10px 20px; border-radius:8px">bom.py</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; background:#E6E1D6; padding:10px 20px; border-radius:8px">mrp.py</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; background:#E6E1D6; padding:10px 20px; border-radius:8px">forecast.py</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; background:#E6E1D6; padding:10px 20px; border-radius:8px">capacity.py</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; background:#E6E1D6; padding:10px 20px; border-radius:8px">period_engine.py</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; background:#E6E1D6; padding:10px 20px; border-radius:8px">constraint.py</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:26px; background:#E6E1D6; padding:10px 20px; border-radius:8px">reconciliation.py</p>
+</div>
+<p style="font-size:30px; line-height:1.4; color:#3E4A59">Same seed and parameters give the same results, within a relative tolerance of 1e-9.</p>
+</div>
+<p style="position:absolute; left:128px; bottom:64px; width:1664px; font-size:24px; color:#5B6675">04 / 19 · Architecture</p>
+<aside>SCENE 4 · SLIDE · 1:30–2:05
+ON SCREEN: This slide. Optional cut-in: the repository tree in VS Code, backend/app/analytics expanded.
+
+VOICEOVER:
+Here is the whole pipeline. ERP-shaped extracts land in SQL Server 2022, running in Docker with a T-SQL schema. A rule engine checks them and records every finding with a scope. Then a pure-Python planning core links everything by article, customer, site and week: BOM explosion, MRP netting, forecast reconstruction, three-tier capacity, and a period-stepped simulation that carries backlog from one week to the next. It is re-runnable: the same seed and the same parameters give the same results.</aside>
+</section>

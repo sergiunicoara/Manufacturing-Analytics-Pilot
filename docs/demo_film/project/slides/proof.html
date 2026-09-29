@@ -1,0 +1,27 @@
+<section id="proof" data-transition="fade" style="background:#F3F1EB; color:#16202E; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:48px">
+<div style="display:flex; flex-direction:column; gap:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#B04A18">Conservation checks</p>
+<h2 style="font-family:Oswald, 'Arial Narrow', sans-serif; font-size:64px; font-weight:500; line-height:1.1; color:#16202E">No run creates capacity or destroys demand</h2>
+</div>
+<div style="display:flex; gap:40px">
+<div style="flex:1; display:flex; flex-direction:column; gap:20px; background:#FBFAF6; padding:40px; border:1px solid #DDD8CC; border-radius:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:#5B6675">Work-centre hours</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:28px; line-height:1.5">required = completed<br>+ ending backlog</p>
+<p style="font-size:30px; line-height:1.4">Shock run, welding: 727.1 = 386.3 + 340.8</p>
+<p style="font-size:30px; line-height:1.4; color:#3E4A59">Discrepancy 0.000000 in all five runs</p>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:20px; background:#FBFAF6; padding:40px; border:1px solid #DDD8CC; border-radius:16px">
+<p style="font-size:24px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:#5B6675">Material</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:28px; line-height:1.5">demand = from stock<br>+ from receipts + net</p>
+<p style="font-size:30px; line-height:1.4">Welded frame, buffer run: from stock +40.0, net −40.0</p>
+<p style="font-size:30px; line-height:1.4; color:#3E4A59">Demand unchanged at 347.1; capacity identical</p>
+</div>
+</div>
+<p style="font-size:40px; line-height:1.3; font-weight:600">A buffer changes where demand is met. It never adds an hour of capacity.</p>
+<p style="position:absolute; left:128px; bottom:64px; width:1664px; font-size:24px; color:#5B6675">13 / 19 · Conservation checks · tests/test_reconciliation.py</p>
+<aside>SCENE 13 · SLIDE · 7:25–7:55
+ON SCREEN: This slide. Optional cut-in: section 8 and 9 of run_cp3_2_report, the reconciliation lines ending in holds=True.
+
+VOICEOVER:
+A decision model is only trustworthy if nothing leaks. Two identities are checked on every run. For hours: what was required equals what was completed plus what is still waiting. For material: demand equals what came from stock, plus what came from receipts, plus what still has to be built. Both hold to six decimals in all five runs. And they explain the buffer result exactly. Forty more units came from stock, forty fewer had to be built, demand did not change, and capacity did not change.</aside>
+</section>
