@@ -13,11 +13,11 @@ A synthetic, local manufacturing decision support demo. The generator produces f
    docker exec -w /app mfg_pilot_api python -m app.dq.run_dq_engine
    docker compose restart api
    ```
-4. Open `http://localhost:5173`; the API is at `http://localhost:8000/docs`.
+4. Open `http://localhost:5173`; the API is at `http://localhost:8000/docs`. After a start the API warms its caches in the background (about 70 s); `http://localhost:8000/health` shows when it is ready.
 
 For client data use the secured profile instead ([docs/SECURITY.md](docs/SECURITY.md)); the demo profile is for synthetic data only.
 
-The first analytics request computes five 12-week reference cases and persists their material and capacity results. It can take substantially longer than later requests. Scenario Lab can run and persist custom cases. For the lead-time comparison, open `/api/executive-story`.
+The five 12-week reference cases are computed once per API process, in the background after start, and their material and capacity results are persisted. A page requested during that warm-up waits for it; afterwards pages are immediate. Scenario Lab can run and persist custom cases. For the lead-time comparison, open `/api/executive-story`.
 
 ## Map
 

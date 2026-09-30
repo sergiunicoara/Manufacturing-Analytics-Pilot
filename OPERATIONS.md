@@ -18,6 +18,18 @@ The API's own login cannot run DDL. If the schema is behind, pages return 503 wi
 
 The API loads all synthetic tables and computes the reference comparison on first analytics access; later requests use its process cache. Restarting the API clears that cache but reuses persisted reference runs whose parameter JSON, seed and data version (source-table fingerprint, analytics code hash and analytical settings) all match; anything else creates new runs and leaves the old ones as audit history. Changing source tables while the API is running requires an API restart for fresh read models.
 
+### Start-up and readiness
+
+After start the API answers within seconds, and a background warm-up computes the reference cases and then the Executive Story (about 70 s in total on the local stack: about 60 s for the five 12-week cases, about 1.5 s for the story). Pages requested while it is still running wait for the same computation rather than starting another; once it finishes, every page is served from the process cache. `GET /health` reports progress:
+
+```json
+{"status": "ok", "warmup": {"enabled": true, "steps": {"reference_cases": "ready", "executive_story": "ready"}, "seconds": {"reference_cases": 61.3, "executive_story": 1.4}, "error": null}}
+```
+
+A failed step (database down, schema behind) is reported there and in the API log, and requests still compute lazily and retry. Set `WARM_ON_START=false` to disable the warm-up. In the secured profile `/health` is unauthenticated, so it shows only "see server log" instead of the error text.
+
+The Executive Story used to take about four minutes on a cold start because every (item, week, scenario) repeated pandas table filtering. `LeadTimeCalculator` indexes the routing and BOM tables once and is reused across scenarios; results are identical (a frozen copy of the old implementation in `tests/reference_leadtime.py` is compared in `tests/test_leadtime_equivalence.py`).
+
 ## Regenerate
 
 Run the synthetic generator with the configured seed, load staging tables into SQL Server (see the README), re-run `app.dq.run_dq_engine`, then restart the API. Keep seed and generated staging outputs together when comparing reports. Custom scenario runs are append-only; their parameters remain in `scenario_runs`.

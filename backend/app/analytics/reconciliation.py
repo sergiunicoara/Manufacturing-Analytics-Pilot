@@ -36,7 +36,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from app.analytics.period_engine import PeriodEngineOutput, compute_lead_time_for_item
+from app.analytics.leadtime import LeadTimeCalculator
+from app.analytics.period_engine import PeriodEngineOutput
 
 TOLERANCE = 1e-6
 
@@ -160,14 +161,14 @@ def compute_system_kpis(
     else:
         plant_items = [lead_time_item_id]
     cab_items = lead_time_item_ids or [lead_time_item_id]
+    calculator = LeadTimeCalculator(routing_headers_df, routing_operations_df, items_df, bom_headers_df, bom_components_df)
 
     def demand_weighted_lead_time(item_ids: list[int]) -> tuple[float, list[tuple[float, float]]]:
         weighted_sum = total_weight = 0.0
         samples = []
         for item_id in item_ids:
             for period in horizon:
-                lt = compute_lead_time_for_item(item_id, period, routing_headers_df, routing_operations_df,
-                    wc_results_by_period, items_df, bom_headers_df, bom_components_df)
+                lt = calculator.compute(item_id, period, wc_results_by_period)
                 if lt is None:
                     continue
                 rows = output.material_series(item_id)

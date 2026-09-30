@@ -1,5 +1,6 @@
 """FastAPI entrypoint for the Executive Story and health check."""
 import datetime as dt
+from contextlib import asynccontextmanager
 from functools import lru_cache
 
 import pandas as pd
@@ -7,22 +8,29 @@ from fastapi import Depends, FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.analytics.data_access import load_all_tables
-from app.analytics.period_engine import compute_lead_time_for_item
+from app.analytics.leadtime import LeadTimeCalculator
 from app.analytics.scenario_demo import (
     cab100_item_ids, run_four_intervention_comparison,
 )
 from app.db.connection import get_engine
 from app.synthetic.timeline import REFERENCE_DATE
-from app import security
+from app import security, warmup
 from app.api import router
 from app.config import settings
 from app.analytics.dashboard import context
 from app.analytics.evidence import evidence, source
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    warmup.start({"reference_cases": lambda: context(), "executive_story": lambda: executive_story()})
+    yield
+
+
 app = FastAPI(
     title="Manufacturing Analytics Pilot API",
     description="Synthetic-data manufacturing analytics pilot. All data is "
     "fictional; this is not connected to any real ERP/MES/BI system.",
+    lifespan=lifespan,
 )
 
 _problems = security.validate_settings()
@@ -42,7 +50,11 @@ app.include_router(router)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    """Liveness plus warm-up progress: pages are fast once both steps report ready."""
+    progress = warmup.status()
+    if security.is_secured():
+        progress["error"] = "see server log" if progress["error"] else None    # /health is unauthenticated
+    return {"status": "ok", "warmup": progress}
 
 
 @app.get("/api/executive-story", dependencies=[Depends(security.require_reader)])
@@ -55,6 +67,8 @@ def executive_story() -> dict:
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Executive Story data unavailable: {exc}") from exc
 
+    calculator = LeadTimeCalculator(tables["routing_headers"], tables["routing_operations"], tables["items"],
+                                    tables["bom_headers"], tables["bom_components"])
     item_ids = cab100_item_ids(tables["items"])
     if not item_ids:
         raise HTTPException(status_code=422, detail="No CAB-100 finished goods are available")
@@ -72,8 +86,7 @@ def executive_story() -> dict:
             total_weight = 0.0
             period_demand = 0.0
             for item_id in item_ids:
-                lt = compute_lead_time_for_item(item_id, period, tables["routing_headers"],
-                    tables["routing_operations"], by_period, tables["items"], tables["bom_headers"], tables["bom_components"])
+                lt = calculator.compute(item_id, period, by_period)
                 rows = result.material_series(item_id)
                 weight = next((r.gross_requirement for r in rows if r.period_start_date == period), 0.0)
                 cab_demand += max(weight, 0.0)
@@ -101,8 +114,7 @@ def executive_story() -> dict:
         plant_total = plant_weight = plant_demand = 0.0
         for item_id in plant_item_ids:
             for period in horizon:
-                lt = compute_lead_time_for_item(item_id, period, tables["routing_headers"],
-                    tables["routing_operations"], by_period, tables["items"], tables["bom_headers"], tables["bom_components"])
+                lt = calculator.compute(item_id, period, by_period)
                 rows = result.material_series(item_id)
                 weight = next((r.gross_requirement for r in rows if r.period_start_date == period), 0.0)
                 plant_demand += max(weight, 0.0)
