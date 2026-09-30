@@ -7,12 +7,13 @@ import pytest
 import sqlalchemy as sa
 
 from app.config import settings
+from tests.db_gate import unavailable
 
 
 def _engine(login: str, env: str):
     password = os.environ.get(env)
     if not password:
-        pytest.skip(f"{env} not set")
+        unavailable(f"{env} not set")
     url = (f"mssql+pyodbc://{login}:{quote_plus(password)}@{settings.mssql_host}:{settings.mssql_port}/"
            f"{settings.mssql_database}?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes")
     engine = sa.create_engine(url)
@@ -20,7 +21,7 @@ def _engine(login: str, env: str):
         with engine.connect() as conn:
             conn.execute(sa.text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"cannot connect as {login}: {exc}")
+        unavailable(f"cannot connect as {login}: {exc}")
     return engine
 
 

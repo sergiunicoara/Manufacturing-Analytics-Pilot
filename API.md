@@ -5,7 +5,7 @@ The local API is documented interactively at `/docs`.
 | Route | Purpose |
 | --- | --- |
 | `GET /health` | Process health. |
-| `GET /api/pages/{slug}` | Evidence-rich read model for each of the nine pages. |
+| `GET /api/pages/{slug}` | Evidence-rich read model for each of the twelve pages. |
 | `GET /kpi/plant-overview` | Plant Overview alias. |
 | `GET /api/executive-story` | Five-case demand-weighted lead-time series and calendar translation. |
 | `GET /story` | Live-number scripted executive beats. |

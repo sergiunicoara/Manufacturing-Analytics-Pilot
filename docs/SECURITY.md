@@ -9,12 +9,13 @@ The pilot has two profiles. **demo** runs locally on synthetic data only and is 
 | **Secured profile refuses unsafe start-up:** default password, `sa` login, missing API keys, keys under 24 characters, no CORS origins | `app/security.py::validate_settings`, `main.py` | `tests/test_security.py`; live: import with defaults raised `RuntimeError` listing all five problems | — |
 | **API authentication:** reader key for every data route, operator key for `POST /api/scenarios/run` and `/copilot/ask`; constant-time comparison; keys never echoed | `app/security.py`, router and route dependencies | Unit tests (401/403 matrix, route introspection). Live secured instance: no key 401, wrong key 401, reader GET 200, reader POST 403, reader copilot 403, operator copilot 200 | SSO / identity provider for named users |
 | **No browser credentials in bundles:** the secured compose override does not start the frontend | `docker-compose.secured.yml` | `docker compose ... config --services` lists only `sqlserver`, `api` | Authenticating reverse proxy or SSO in front of a UI |
-| **Local ports bound to 127.0.0.1** in the secured profile | `docker-compose.secured.yml` | `docker compose config` shows `host_ip: 127.0.0.1` for 1433 and 8000 | Network segmentation on the real host |
+| **Local ports bound to 127.0.0.1** in both profiles (demo and secured) | `docker-compose.yml`, `docker-compose.secured.yml` | `docker compose config` shows `host_ip: 127.0.0.1` for 1433, 8000 and 5173 | Network segmentation on the real host |
 | **Secrets never in Git or logs:** `.env` ignored; compose requires `${VAR:?}`; logins created from environment variables and passed as query parameters, quoted with `QUOTENAME` | `.gitignore`, `app/db/security_setup.py` | Live: API keys found 0 times in the secured instance's log | Secret store (vault) on the host |
 | **Least-privilege SQL identities** | `db/migrations/200_security_roles.sql`, `app/db/security_setup.py` | `tests/test_least_privilege.py` (live, passed): `pilot_reader` reads `vw_*` only and is denied base tables and deletes. `pilot_app` reads sources and writes only its 7 result tables; denied DDL, `DROP`, source writes and role changes. The secured API ran its full context build as `pilot_app` | Client DBA review; separate extraction login on the client side |
 | **External LLM only by explicit opt-in** (`ALLOW_EXTERNAL_LLM=true` plus a key) in the secured profile; deterministic evidence-only by default | `security.llm_allowed` | Unit test: with evidence and a key but no opt-in, the provider is never called; existing test: no call without evidence | Client authorisation to send any data to a provider |
 | **Payload minimisation** before an LLM call: record, customer and entity identifiers removed; lists capped at 20 | `security.minimise_for_llm` | Unit test | — |
 | **Safe restore:** validated names and paths, refuses to overwrite, copy-only backups, never `WITH REPLACE` | `app/db/restore.py` | `tests/test_restore_safety.py` (16), including an injection attempt refused; live round trip into a new database | Restore on the approved host |
+| **Dependency checks:** `pip-audit` and `npm audit` (commands in OPERATIONS.md); pins raised 2026-09-30 after `pip-audit` flagged `starlette`, `pytest` and `python-dotenv` | `backend/requirements.txt` | Both audits clean on 2026-09-30; full suite passed on the new pins | Periodic re-run; a pin is a snapshot |
 | **Read-only toward the ERP;** parameter export has `erp_write_back: false` | `parameter_export.py` | Schema test rejects `erp_write_back: true` | — |
 
 ## What leaves the process
@@ -44,4 +45,5 @@ These are requirements, not implemented facts:
 
 - Deployment to an EU host, TLS certificates, TDE and a vault. These are infrastructure work the client must approve.
 - Named-user authorization (SSO / RBAC per person). The API keys are service-level credentials.
-- The demo profile's open CORS, `sa` login and default password are for local synthetic data only.
+- The demo profile's open CORS, `sa` login and default password are for local synthetic data only. Its ports are published on `127.0.0.1`, so other machines on the network cannot reach it.
+- The live database tests skip when SQL Server or the two logins are unavailable; run them with `REQUIRE_DB_TESTS=1` (see OPERATIONS.md) to make a skip a failure.

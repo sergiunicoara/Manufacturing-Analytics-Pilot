@@ -12,6 +12,10 @@ from pathlib import Path
 import pandas as pd
 
 AUDIT_COLUMNS = frozenset({"created_at", "updated_at"})
+# Analytical constants read from app.config by the analytics/dq code; infrastructure settings are excluded.
+ANALYTICAL_SETTINGS = ("forecast_consumption_window_weeks", "utilization_threshold_backlog_switch",
+                       "max_bounded_queue_time_days", "candidate_constraint_min_consecutive_periods",
+                       "reproducibility_relative_tolerance", "synthetic_seed")
 CODE_PACKAGES = ("analytics", "dq")
 
 
@@ -44,5 +48,12 @@ def code_version(root: Path | None = None) -> str:
     return digest.hexdigest()[:16]
 
 
+def settings_version(source=None) -> str:
+    from app.config import settings
+    source = source or settings
+    digest = hashlib.sha256(",".join(f"{name}={getattr(source, name)!r}" for name in ANALYTICAL_SETTINGS).encode())
+    return digest.hexdigest()[:16]
+
+
 def data_version(tables: dict[str, pd.DataFrame], table_names: list[str]) -> str:
-    return f"data:{source_data_version(tables, table_names)}|code:{code_version()}"
+    return f"data:{source_data_version(tables, table_names)}|code:{code_version()}|cfg:{settings_version()}"

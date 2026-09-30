@@ -1,5 +1,15 @@
 # Lessons
 
+## 2026-09-30 — Anything added after the bootstrap must be wired into the bootstrap
+
+Migrations were added later (result tables, views, roles, a column) and tested only by tests that applied them themselves. The destructive DDL bootstrap and the loader never knew about them: a fresh install had no `data_version` column, and a reload of a migrated database failed on a foreign key from a migration-created table. Neither showed up in the suite, because the suite always started from a database it had already prepared.
+
+**How to apply going forward:**
+- When adding a versioned layer on top of a bootstrap, update the bootstrap (drop order, ledger reset) and the loader in the same change.
+- Test the real fresh path: install from an empty stack by the README steps, then reload a populated database. A static test of drop order catches the FK class of bug without a database.
+- Make the application fail with an actionable message when the schema is behind, not with a SQL error.
+- Environment resets happen (Docker Desktop was reset mid-session): a documented, reproducible setup path is what makes recovery cheap; the regenerated data had the identical fingerprint.
+
 ## 2026-09-29 — Calibrating one domain without moving the rest
 
 The execution history (operation timestamps, completed-order counts) was a generator artefact: whole-day splits of the order span gave recorded times of about 10× the routing standard, and 1–3 completed orders per item starved the policy heuristic. The fix followed the CP3.2 lesson literally. A new final generator step (`execution_history.py`) runs **after** DQ injection and snapshots, on its own spawned stream (`SeedSequence(seed, spawn_key=(2,))`). It only rewrites timestamps of fully COMPLETED orders and appends new completed orders, and it never touches WIP-feeding open orders.

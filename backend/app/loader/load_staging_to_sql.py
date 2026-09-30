@@ -88,11 +88,18 @@ def _load_table(engine: sa.engine.Engine, metadata: sa.MetaData, table_name: str
     return len(records)
 
 
-def load_all(staging_dir: str = "staging", ddl_path: str = "db/ddl/001_schema.sql") -> dict:
+def load_all(staging_dir: str = "staging", ddl_path: str = "db/ddl/001_schema.sql",
+             migrations_dir: str | None = "db/migrations") -> dict:
+    """Destructive bootstrap: the DDL drops and recreates every table, then the versioned migrations
+    (result tables, read models, roles, run data version) are re-applied so the schema is current
+    before the API starts. Pass migrations_dir=None only to inspect the bare DDL."""
     wait_for_sql_server()
     run_ddl_file(ddl_path)
 
     engine = get_engine()
+    if migrations_dir:
+        from app.db.migrate import apply_migrations
+        print("Applied migrations:", ", ".join(apply_migrations(migrations_dir, engine)) or "none")
     metadata = reflect_metadata(engine)
 
     counts = {}
@@ -107,5 +114,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--staging-dir", default="staging")
     parser.add_argument("--ddl", default="db/ddl/001_schema.sql")
+    parser.add_argument("--migrations", default="db/migrations")
     args = parser.parse_args()
-    load_all(args.staging_dir, args.ddl)
+    load_all(args.staging_dir, args.ddl, args.migrations)

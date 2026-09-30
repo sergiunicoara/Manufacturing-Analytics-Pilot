@@ -28,6 +28,10 @@ GO
 -- ============================================================
 -- Drop in dependency order (dev convenience — safe to re-run)
 -- ============================================================
+-- Objects created by db/migrations must go first: cost_results references scenario_runs, and the ledger
+-- must be reset so the migrations re-apply after this destructive bootstrap.
+IF OBJECT_ID('cost_results', 'U') IS NOT NULL DROP TABLE cost_results;
+IF OBJECT_ID('schema_migrations', 'U') IS NOT NULL DROP TABLE schema_migrations;
 IF OBJECT_ID('buffer_recommendations', 'U') IS NOT NULL DROP TABLE buffer_recommendations;
 IF OBJECT_ID('period_engine_results', 'U') IS NOT NULL DROP TABLE period_engine_results;
 IF OBJECT_ID('material_requirements', 'U') IS NOT NULL DROP TABLE material_requirements;

@@ -23,7 +23,7 @@ def test_any_content_change_changes_the_version():
 
 def test_version_combines_data_and_code():
     version = dv.data_version({"items": _items()}, ["items"])
-    assert version.startswith("data:") and "|code:" in version
+    assert version.startswith("data:") and "|code:" in version and "|cfg:" in version
     assert dv.code_version() == dv.code_version()
 
 
@@ -33,3 +33,12 @@ def test_ensure_run_does_not_reuse_without_a_matching_version(monkeypatch):
     monkeypatch.setattr(scenario_store, "save_run", lambda *args: saved.append(args) or 99)
     assert scenario_store.ensure_run(None, "BASELINE", {}, None, data_version=None) == 99
     assert saved and saved[0][-1] is None
+
+
+def test_changing_an_analytical_setting_changes_the_version():
+    import dataclasses
+    from app.config import settings
+    changed = dataclasses.replace(settings, forecast_consumption_window_weeks=settings.forecast_consumption_window_weeks + 1)
+    assert dv.settings_version(changed) != dv.settings_version(settings)
+    infra = dataclasses.replace(settings, mssql_host="elsewhere")
+    assert dv.settings_version(infra) == dv.settings_version(settings)

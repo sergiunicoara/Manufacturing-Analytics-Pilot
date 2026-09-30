@@ -34,23 +34,37 @@ docker exec -w /app mfg_pilot_api python -m app.db.restore <command> ...
    docker exec -w /app mfg_pilot_api python -m app.db.migrate
    ```
 
-## Demonstrated round trip (local synthetic stack, 2026-09-29)
+## Demonstrated round trip (local synthetic stack, 2026-09-30, freshly reloaded database)
 
 ```bash
-docker exec -w /app mfg_pilot_api python -m app.db.restore roundtrip --database mfg_analytics_pilot --target pilot_restore_check_20260929
+docker exec -w /app mfg_pilot_api python -m app.db.restore roundtrip --database mfg_analytics_pilot --target pilot_restore_check_20260930
 ```
 
 | Check | Result |
 |---|---|
-| Copy-only backup | `/var/opt/mssql/data/pilot_restore_check_20260929.bak` |
-| RESTORE with MOVE | data and log files moved to `pilot_restore_check_20260929.mdf` / `_log.ldf` |
+| Copy-only backup | `/var/opt/mssql/data/pilot_restore_check_20260930.bak` |
+| RESTORE with MOVE | data and log files moved to `pilot_restore_check_20260930.mdf` / `_log.ldf` |
 | Tables compared | 30 (identical set) |
-| Rows compared | 87,205, with no table mismatched |
+| Rows compared | 74,844, with no table mismatched |
 | Views | 6 = 6 |
 | Foreign keys | 40 = 40 |
-| Re-running into `mfg_analytics_pilot` | refused: "already exists; refusing to overwrite" |
+| Restoring onto an existing database | refused ("already exists; refusing to overwrite"), also covered by `tests/test_restore_safety.py` |
 
-The disposable database `pilot_restore_check_20260929` and its `.bak` were left in place as evidence. They hold the same synthetic data as the source. Deleting them is a separate, manual decision; this tool never deletes anything.
+The 2026-09-29 round trip gave the same result (30 tables, 87,205 rows) on the previous database, which was lost when Docker Desktop was reset.
+
+**Cleanup.** The disposable database and its `.bak` were removed by hand after validation; this tool never deletes anything. To remove another one (a one-off, manual step):
+
+```bash
+docker exec -i -w /app mfg_pilot_api python - <<'EOF'
+import sqlalchemy as sa
+from app.config import settings
+from app.db.connection import get_engine
+name = "pilot_restore_check_YYYYMMDD"      # must be a disposable name you created
+with get_engine(settings.mssql_odbc_url_master).connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+    c.execute(sa.text(f"DROP DATABASE [{name}]"))
+EOF
+docker exec mfg_pilot_sqlserver rm -f /var/opt/mssql/data/<name>.bak
+```
 
 ## Not demonstrated here
 

@@ -5,6 +5,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from tests.db_gate import unavailable
+
 MIGRATIONS = Path(__file__).resolve().parents[1] / "db" / "migrations"
 if not MIGRATIONS.exists():
     MIGRATIONS = Path(__file__).resolve().parents[2] / "db" / "migrations"
@@ -19,7 +21,7 @@ def engine():
         with engine.connect() as conn:
             conn.execute(sa.text("SELECT 1 FROM dbo.items WHERE 1 = 0"))
     except Exception as exc:  # noqa: BLE001 - any connectivity failure means "not available here"
-        pytest.skip(f"SQL Server not available: {exc}")
+        unavailable(f"SQL Server not available: {exc}")
     from app.db.migrate import apply_migrations
     apply_migrations(str(MIGRATIONS), engine)
     return engine
@@ -69,3 +71,8 @@ def test_weekly_load_view_preserves_persisted_results_and_nulls(engine):
     table = pd.read_sql("SELECT COUNT(*) AS n, SUM(CASE WHEN effective_hours IS NULL THEN 1 ELSE 0 END) AS nulls "
                         "FROM dbo.period_engine_results", engine).iloc[0]
     assert view["n"] == table["n"] and view["nulls"] == table["nulls"]
+
+
+def test_migrated_database_passes_the_schema_guard(engine):
+    from app.db.migrate import schema_problems
+    assert schema_problems(engine) == []

@@ -1,7 +1,7 @@
 # Requirements completion matrix
 
 Baseline review: 2026-09-29, working tree on `master` at `8894825` plus uncommitted film work (not modified by this review).
-Baseline at review start: 95 passed. **Final gate (2026-09-29, 06:45–06:47Z, after the last code change): `docker exec -w /app mfg_pilot_api python -m pytest -q -rs` → 182 passed, 0 skipped in 156 s** (includes live SQL parity and least-privilege tests); `npm run build` succeeded; browser check: all 12 pages and the Executive Story rendered with no errors, a custom scenario saved as run #14 (212.19 backlog h), the copilot answered a cost question with the `get_cost` tool and refused a nonexistent item. Checkpoint labels and earlier test counts in `tasks/todo.md` are history, not evidence.
+Baseline at review start: 95 passed. **Latest verification (2026-09-30, after the audit fixes, on a freshly rebuilt Docker stack with the README's setup steps): full suite in the container with `REQUIRE_DB_TESTS=1` → 201 passed, 0 skipped, plus one new test whose path bug was fixed and re-run (11/11 in `test_loaders.py`); the same suite on the host with the raised dependency pins → 195 passed, 5 database tests skipped (no ODBC driver); `pip-audit` and `npm audit` report no known vulnerabilities; all 12 pages and the Executive Story return 200 and render; the five scenario backlogs are unchanged (74.4 / 212.2 / 93.1 / 164.4 / 77.3).** Earlier full runs: 189 passed (2026-09-29, after the history calibration), 182 passed (2026-09-29, before it).
 
 **Sources.** Group A: `PLAN.md`. Group B: analytical corrections approved during the build (period-entry lead time, BOM-path lead time, 12-week presentation horizon). Group C: additional ERP-pilot requirements from `docs/IMPLEMENT_REMAINING_PROMPT.md`. The original job description is only available as a paste in a previous session transcript; it is summarised there and not quoted here.
 
@@ -29,7 +29,7 @@ Baseline at review start: 95 passed. **Final gate (2026-09-29, 06:45–06:47Z, a
 | A16 | Cost: unit cost, WIP carrying cost over the weekly series | `analytics/cost.py`, Decision Economics page, `cost_results` | `test_cost.py` (7), live five cases | DONE | WIP carrying cost reported UNAVAILABLE (mixed-item WIP); rates ASSUMED |
 | A17 | Scenario engine: 4 intervention types + persistence (CORR-7/8) | `scenario_demo.py`, `scenario_store.py`, `dashboard.py` | `test_interventions.py`, `test_golden_scenarios.py`, `test_data_version.py` | DONE | Reuse now requires matching data version (runs 9–13 live) |
 | A18 | Evidence object on every KPI (CORR-9) | `analytics/evidence.py` (+ units, time_scope, coverage, exclusions, data_origin on new results) | `test_cp4_cp5.py::test_every_page_supplies_evidence` | DONE | Older pages do not all carry the optional fields |
-| A19 | Evidence Drawer on all 9 pages | `frontend/src/DashboardApp.tsx` | browser check (CP4) | DONE | |
+| A19 | Evidence Drawer on all pages (now 12) | `frontend/src/DashboardApp.tsx` | browser check (CP4) | DONE | |
 | A20 | Copilot with insufficient-evidence gate (CORR-10) | `api.py:190` | `test_cp4_cp5.py` | DONE | No authorization gate for sensitive-data profile (C8) |
 | A21 | Executive Story with live numbers | `/story`, `/api/executive-story` | `test_golden_scenarios.py` | DONE | |
 | A22 | Reproducibility within tolerance (CORR-11) | tests | `test_synthetic_data_generation.py` | DONE | |
@@ -58,3 +58,17 @@ Baseline at review start: 95 passed. **Final gate (2026-09-29, 06:45–06:47Z, a
 | C9 | Reporting fixes: 2.5× wording, DQ explanation + full export, consumption policy evidence, data-version cache identity, orphan process inspection | DONE | 2.5× reworded in PLAN/LIMITATIONS as a historical 16-week figure; DQ grouped with unique-record coverage and CSV export; consumption policy tested; run reuse keyed on data version; report process had exited on its own (`docker top`) |
 | C10 | UI/API wiring, end-to-end verification, updated docs | DONE | See the final gate above. Docs updated: ANALYTICS_METHODS, API, LIMITATIONS, PILOT_FINDINGS, DEMO_GUIDE, PLAN |
 | C11 | Film | OUT OF SCOPE | Excluded by the user on 2026-09-29; the uncommitted `docs/demo_film/` files were left untouched |
+
+## D. Audit findings (2026-09-30) and their fixes
+
+| # | Finding | Fix | Verification |
+|---|---|---|---|
+| D1 | A fresh install or a reload left the schema without the migrations, or failed on the `cost_results` foreign key | `001_schema.sql` drops `cost_results` and resets `schema_migrations`; the loader applies `db/migrations` after the DDL; the API returns an actionable "schema out of date" message | Fresh install from an empty stack by the README steps; destructive reload of a populated, migrated database succeeded; `tests/test_loaders.py` checks drop order statically |
+| D2 | Data version ignored `config.py` constants | `cfg:` component hashes the analytical settings | `test_data_version.py` |
+| D3 | Demo ports published on all interfaces | Bound to `127.0.0.1` | `docker ps` shows `127.0.0.1:` for 1433, 8000, 5173 |
+| D4 | Docs stale (nine pages, migrations, cost tables, secured profile, resolution wording) | README, OPERATIONS, ARCHITECTURE, DATA_MODEL, API, ANALYTICS_METHODS, LIMITATIONS, SECURITY updated | Review |
+| D5 | `refresh_execution` and the loader had no tests | Guard logic split into pure functions; `test_loaders.py` (11 tests) | Passing in repo and container layouts |
+| D6 | Legacy checkpoint report scripts undocumented | Documented (all read-only except the netting script's own run) in OPERATIONS.md | Import check |
+| D7 | Database tests could skip silently | `REQUIRE_DB_TESTS=1` turns a skip into a failure | Strict run: 0 skipped |
+| D8 | Local leftovers | Disposable restore database and `.bak` removed; scenario runs kept as audit history; test logins kept for the live tests | Verified absent |
+| D9 | Vulnerable pins (`starlette` via `fastapi`, `pytest`, `python-dotenv`) | Raised to `fastapi 0.142.2`, `starlette 1.7.0`, `pytest 9.0.3`, `python-dotenv 1.2.2` | `pip-audit` clean; full suite passes on the new pins |

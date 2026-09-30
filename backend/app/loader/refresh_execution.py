@@ -31,34 +31,42 @@ def _records(df: pd.DataFrame, table: sa.Table) -> list[dict]:
     return [{k: _coerce_value(v, types[k]) for k, v in row.items() if k in types} for row in df.to_dict("records")]
 
 
-def check(engine: sa.Engine, staging_dir: str) -> list[str]:
+def count_problems(db_counts: dict[str, int], csv_counts: dict[str, int]) -> list[str]:
+    return [f"{name}: database has {db_counts[name]} rows, staging has {csv_counts[name]}"
+            for name in db_counts if name not in REFRESHED and db_counts[name] != csv_counts.get(name)]
+
+
+def identity_problems(existing: pd.DataFrame, staged: pd.DataFrame) -> list[str]:
+    """Existing orders (indexed by production_order_id) must keep their identity columns; only actual
+    dates may change. Orders present only in staging are new and allowed."""
     problems = []
-    with engine.connect() as conn:
-        for name in TABLE_ORDER:
-            if name in REFRESHED:
-                continue
-            db_rows = conn.execute(sa.text(f"SELECT COUNT(*) FROM dbo.[{name}]")).scalar()
-            csv_rows = len(pd.read_csv(os.path.join(staging_dir, f"{name}.csv")))
-            if db_rows != csv_rows:
-                problems.append(f"{name}: database has {db_rows} rows, staging has {csv_rows}")
-    existing = pd.read_sql("SELECT production_order_id, " + ", ".join(IDENTITY_COLUMNS) + " FROM dbo.production_orders",
-                           engine).set_index("production_order_id")
-    staged = pd.read_csv(os.path.join(staging_dir, "production_orders.csv")).set_index("production_order_id")
     missing = existing.index.difference(staged.index)
     if len(missing):
         problems.append(f"{len(missing)} existing production orders are absent from staging")
     common = existing.index.intersection(staged.index)
     for column in IDENTITY_COLUMNS:
-        a, b = existing.loc[common, column].astype(str), staged.loc[common, column].astype(str)
-        if column in ("qty",):
-            a, b = existing.loc[common, column].astype(float), staged.loc[common, column].astype(float)
-        if column in ("planned_start", "planned_finish"):
-            a = pd.to_datetime(existing.loc[common, column]).dt.date
-            b = pd.to_datetime(staged.loc[common, column]).dt.date
+        a, b = existing.loc[common, column], staged.loc[common, column]
+        if column == "qty":
+            a, b = a.astype(float), b.astype(float)
+        elif column in ("planned_start", "planned_finish"):
+            a, b = pd.to_datetime(a).dt.date, pd.to_datetime(b).dt.date
+        else:
+            a, b = a.astype(str), b.astype(str)
         changed = int((a != b).sum())
         if changed:
             problems.append(f"{changed} existing production orders changed {column}")
     return problems
+
+
+def check(engine: sa.Engine, staging_dir: str) -> list[str]:
+    with engine.connect() as conn:
+        db_counts = {name: conn.execute(sa.text(f"SELECT COUNT(*) FROM dbo.[{name}]")).scalar()
+                     for name in TABLE_ORDER if name not in REFRESHED}
+    csv_counts = {name: len(pd.read_csv(os.path.join(staging_dir, f"{name}.csv"))) for name in db_counts}
+    existing = pd.read_sql("SELECT production_order_id, " + ", ".join(IDENTITY_COLUMNS) + " FROM dbo.production_orders",
+                           engine).set_index("production_order_id")
+    staged = pd.read_csv(os.path.join(staging_dir, "production_orders.csv")).set_index("production_order_id")
+    return count_problems(db_counts, csv_counts) + identity_problems(existing, staged)
 
 
 def refresh(staging_dir: str = "staging") -> dict:

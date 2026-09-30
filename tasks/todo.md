@@ -181,3 +181,11 @@ Matrix: docs/REQUIREMENTS_COMPLETION_MATRIX.md. Fresh baseline: 95 tests pass.
 
 Decisions taken (routine): SQL views are the single authority for the three BI metrics that
 Python also computes; parity is asserted, not duplicated logic. No ERP write-back anywhere.
+
+## Audit fixes — 2026-09-30 (docs/REQUIREMENTS_COMPLETION_MATRIX.md, section D)
+- [x] Loader applies migrations; 001 drops cost_results and resets the ledger; schema guard message
+- [x] Data version includes analytical settings; demo ports on 127.0.0.1
+- [x] Tests for the loaders and refresh guards; REQUIRE_DB_TESTS strict mode
+- [x] Docs brought up to date; legacy report scripts documented
+- [x] Dependency pins raised after pip-audit; verified by the full suite and a clean audit
+- [ ] Film (out of scope per the user); its files remain uncommitted

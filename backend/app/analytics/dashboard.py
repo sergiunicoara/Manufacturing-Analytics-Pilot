@@ -23,6 +23,7 @@ from app.analytics.scenario_demo import build_engine_inputs, cab100_item_ids, ru
 from app.analytics.scenario_store import ensure_run, save_cost_results
 from app.config import settings
 from app.db.connection import get_engine
+from app.db.migrate import require_current_schema
 from app.dq import summary as dq_summary
 from app.dq.engine import findings_to_dataframe, run_all
 from app.synthetic.run_generator import TABLE_ORDER as SOURCE_TABLES
@@ -65,6 +66,7 @@ def consumption_events(tables) -> list[dict]:
 
 def _build_context():
     engine = get_engine()
+    require_current_schema(engine)
     tables = source_tables()
     comparison = run_four_intervention_comparison(tables, list(HORIZON), demand_multiplier=1.4)
     comparison["data_version"] = data_version(tables, SOURCE_TABLES)

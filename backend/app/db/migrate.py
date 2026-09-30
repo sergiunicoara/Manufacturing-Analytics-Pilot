@@ -38,6 +38,25 @@ def split_batches(script: str) -> list[str]:
     return [b.strip() for b in batches if b.strip()]
 
 
+REQUIRED_OBJECTS = (("scenario_runs.data_version", "SELECT COL_LENGTH('dbo.scenario_runs', 'data_version')"),
+                    ("cost_results", "SELECT OBJECT_ID('dbo.cost_results', 'U')"))
+
+
+def schema_problems(engine: sa.Engine | None = None) -> list[str]:
+    """Objects the application needs that the database lacks. Read-only, so it works for the
+    least-privilege application login (which cannot run migrations itself)."""
+    engine = engine or get_engine()
+    with engine.connect() as conn:
+        return [name for name, sql in REQUIRED_OBJECTS if conn.execute(sa.text(sql)).scalar() is None]
+
+
+def require_current_schema(engine: sa.Engine | None = None) -> None:
+    missing = schema_problems(engine)
+    if missing:
+        raise RuntimeError(f"Database schema is out of date (missing: {', '.join(missing)}). "
+                           "Apply the migrations with an administrator login: python -m app.db.migrate")
+
+
 def apply_migrations(directory: str = "db/migrations", engine: sa.Engine | None = None) -> list[str]:
     engine = engine or get_engine()
     applied_now = []

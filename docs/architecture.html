@@ -484,7 +484,7 @@ footer {
     times come from generated timestamps; they are shown beside the modelled lead times and never merged
     into them. The demo profile has no authentication. The secured profile adds API keys and least-privilege
     SQL logins, but not named-user authorization or any evidence of EU hosting. Everything below runs
-    end-to-end in <code>docker compose</code>; the last full backend run (2026-09-29) passed 189 tests.</p>
+    end-to-end in <code>docker compose</code>; the last full backend run (2026-09-30, with the database tests required) passed 201 tests with none skipped.</p>
   <div class="pipeline-scroll"><div class="pipeline">
     <div class="stage">
       <div class="stage-label"><b>01</b> · ERP-shaped sources</div>
@@ -584,8 +584,8 @@ footer {
     including what is tested and what still needs client infrastructure.</p>
 
   <div class="stack">
-    <div class="stack-row"><div class="lbl">demo</div><div class="body">Local synthetic data only. No API keys, open CORS, the dev database login. Never used with client data.</div></div>
-    <div class="stack-row"><div class="lbl">secured — start-up</div><div class="body"><code>validate_settings()</code> stops the process for the demo password, the <code>sa</code> login, missing or short API keys, or no CORS origin. Secrets come from the environment; the compose override has no defaults and binds ports to <code>127.0.0.1</code>.</div></div>
+    <div class="stack-row"><div class="lbl">demo</div><div class="body">Local synthetic data only. No API keys, open CORS, the dev database login; ports are published on <code>127.0.0.1</code> only. Never used with client data.</div></div>
+    <div class="stack-row"><div class="lbl">secured — start-up</div><div class="body"><code>validate_settings()</code> stops the process for the demo password, the <code>sa</code> login, missing or short API keys, or no CORS origin. Secrets come from the environment; the compose override has no defaults.</div></div>
     <div class="stack-row"><div class="lbl">secured — requests</div><div class="body">Every route except <code>/health</code> needs <code>X-API-Key</code>. A reader key can read; only an operator key can run scenarios or use the copilot. Checked on a live instance: no key 401, reader on a mutation 403, operator 200.</div></div>
     <div class="stack-row"><div class="lbl">secured — database</div><div class="body"><code>pilot_reader</code> can select the <code>vw_*</code> views only; <code>pilot_app</code> reads sources and writes seven result tables, with no DDL. Both were verified by logging in as them.</div></div>
     <div class="stack-row gap"><div class="lbl">not evidenced</div><div class="body">EU hosting, TLS, encryption at rest, retention, the data processing agreement and named-user authorization. Those need the client's infrastructure and approvals.</div></div>
