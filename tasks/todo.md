@@ -189,3 +189,5 @@ Python also computes; parity is asserted, not duplicated logic. No ERP write-bac
 - [x] Docs brought up to date; legacy report scripts documented
 - [x] Dependency pins raised after pip-audit; verified by the full suite and a clean audit
 - [ ] Film (out of scope per the user); its files remain uncommitted
+- [x] Final verification 2026-09-30 (ca6f083): 209 passed / 0 skipped strict; browser pass; secured compose override run and probed live
+- Open: the film (out of scope); first ~60 s after an API restart is the background warm-up
