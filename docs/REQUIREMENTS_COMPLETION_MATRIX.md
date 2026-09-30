@@ -90,3 +90,7 @@ Baseline at review start: 95 passed. **Final verification (2026-09-30, commit `c
 | E10 | Buffer row crashed without a computed range | Blocked row, confidence `NONE` | Unit test |
 
 Final strict run (`REQUIRE_DB_TESTS=1`, secured logins exported): 219 passed, 0 skipped.
+
+## F. UI tests
+
+`frontend`: `npm test` runs 63 Vitest tests (`DashboardApp.test.tsx`, `ExecutiveStoryVisuals.test.tsx`) against a mocked API and mocked Plotly. They cover loading, API errors, stale responses, all twelve pages, the evidence drawer, chart click-through, the scenario lab, stage-record filters and paging, the copilot and the executive story. Deliberately breaking three behaviours (stale-response guard, pager step, drawer reset on navigation) made the matching tests fail. Not covered: real Plotly rendering, styling and a real browser.

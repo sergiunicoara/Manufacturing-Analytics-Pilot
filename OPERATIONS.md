@@ -53,7 +53,7 @@ See [docs/RESTORE_RUNBOOK.md](docs/RESTORE_RUNBOOK.md) (new database only, never
 
 ## Verify
 
-Run `PYTHONPATH=backend python -m pytest backend/tests -q` from the project root (PowerShell: `$env:PYTHONPATH='backend'; python -m pytest backend/tests -q`). Run `npm run build` in `frontend`. Check `/health`, `/kpi/plant-overview`, `/api/executive-story`, `/story`, and the dashboard in a browser.
+Run `PYTHONPATH=backend python -m pytest backend/tests -q` from the project root (PowerShell: `$env:PYTHONPATH='backend'; python -m pytest backend/tests -q`). Run `npm test` in `frontend` (Vitest, jsdom and Testing Library; Plotly and `fetch` are mocked, so no API or database is needed) and `npm run build`. The UI tests cover page loading and errors, all twelve navigation targets, the evidence drawer, chart click-through, the scenario lab, the stage-record filters and paging, the copilot and the executive story. Check `/health`, `/kpi/plant-overview`, `/api/executive-story`, `/story`, and the dashboard in a browser.
 
 ### Dependency checks
 
