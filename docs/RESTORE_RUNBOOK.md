@@ -11,7 +11,8 @@ docker exec -w /app mfg_pilot_api python -m app.db.restore <command> ...
 - **Database names:** only `^[A-Za-z][A-Za-z0-9_]{0,63}$`.
 - **Backup paths:** absolute `.bak` paths under `/var/opt/mssql/data` or `/var/opt/mssql/backup`, containing only `[A-Za-z0-9_./-]` and no `..`. Nothing else is interpolated into T-SQL. An injection attempt such as `x';DROP DATABASE y;--.bak` is refused before any SQL runs.
 - **No overwrites:** restoring onto an existing database is refused. `WITH REPLACE` and `DROP` never appear in any statement. To restore again, choose a new target name.
-- **Copy-only backups:** backups are `COPY_ONLY, CHECKSUM`, so they never break an existing backup chain.
+- **Copy-only backups to a new file only:** backups are `COPY_ONLY, NOINIT, CHECKSUM`, so they never break an existing backup chain. If the target `.bak` path already exists (for example a client backup) the backup is refused, so an existing file is never overwritten or appended to.
+- **One physical file per backup file:** restored files are named by `FileId` (`<target>.mdf` for the primary data file, `<target>_<id>.ndf` for other data files, `<target>_log<id>.ldf` for logs), so multiple log or data files cannot collide. Full-text or FILESTREAM files are refused with a message to restore them manually.
 - **VERIFYONLY is not enough:** it only proves the media is readable and the checksums are valid. `roundtrip` restores and then compares tables, row counts, views and foreign keys.
 
 ## Receiving a client backup
@@ -43,7 +44,7 @@ docker exec -w /app mfg_pilot_api python -m app.db.restore roundtrip --database 
 | Check | Result |
 |---|---|
 | Copy-only backup | `/var/opt/mssql/data/pilot_restore_check_20260930.bak` |
-| RESTORE with MOVE | data and log files moved to `pilot_restore_check_20260930.mdf` / `_log.ldf` |
+| RESTORE with MOVE | data and log files moved to `pilot_restore_check_20260930.mdf` / `_log.ldf` (naming before the FileId scheme; see the safety rules) |
 | Tables compared | 30 (identical set) |
 | Rows compared | 74,844, with no table mismatched |
 | Views | 6 = 6 |

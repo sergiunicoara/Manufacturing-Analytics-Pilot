@@ -49,6 +49,23 @@ def context():
     return _context_value
 
 
+_findings_lock = Lock()
+_findings_cache: tuple[int, list] | None = None
+
+
+def findings_for(tables) -> list:
+    """DQ findings for this loaded dataset, computed once and reused by every page and export; recomputed
+    only when a different set of tables is passed (for example after an API restart or in tests)."""
+    global _findings_cache
+    cached = _findings_cache
+    if cached is not None and cached[0] == id(tables):
+        return cached[1]
+    with _findings_lock:
+        if _findings_cache is None or _findings_cache[0] != id(tables):
+            _findings_cache = (id(tables), run_all(tables))
+        return _findings_cache[1]
+
+
 def source_tables():
     """Source tables alone, without running the reference scenarios."""
     global _tables_value
@@ -155,8 +172,8 @@ def plant_overview():
                       [source("work centre WIP estimates", [r.wip_qty for r in final], "period_engine_results", "DERIVED")]),
                metric("Constrained work centres", constrained, "ANALYTICS_METHODS.md#constraint-classification",
                       [source("final classifications", [r.constraint_classification for r in final], "period_engine_results", "DERIVED")]),
-               metric("Data quality findings", len(run_all(tables)), "ANALYTICS_METHODS.md#data-quality",
-                      [source("rule engine findings", len(run_all(tables)), "dq_findings", "DERIVED")])]
+               metric("Data quality findings", len(findings_for(tables)), "ANALYTICS_METHODS.md#data-quality",
+                      [source("rule engine findings", len(findings_for(tables)), "dq_findings", "DERIVED")])]
     trend = []
     for date in HORIZON:
         rows = [r for r in base.work_centre_results if r.period_start_date == date]
@@ -333,7 +350,7 @@ def scenarios():
 
 def data_quality():
     tables = source_tables()
-    findings = run_all(tables)
+    findings = findings_for(tables)
     groups = dq_summary.explain(findings, tables)
     coverage = dq_summary.entity_coverage(findings, tables)
     blocking = [f for f in findings if f.classification == "BLOCKING"]
@@ -397,7 +414,7 @@ def _num(value, digits=1):
 
 def stage_history_frame():
     tables = source_tables()
-    blocking = build_blocking_index(findings_to_dataframe(run_all(tables)))
+    blocking = build_blocking_index(findings_to_dataframe(findings_for(tables)))
     classified = sh.classify_operations(tables["production_order_operations"], tables["production_orders"],
                                         blocking, STAGE_HISTORY_WINDOW)
     classified["standard_processing_hours"] = sh.standard_processing_hours(
@@ -483,13 +500,13 @@ def stage_performance():
 
 
 def dq_findings(rule_id=None, classification=None, origin=None, entity=None, offset=0, limit=100):
-    findings = dq_summary.filter_findings(run_all(source_tables()), rule_id, classification, origin, entity)
+    findings = dq_summary.filter_findings(findings_for(source_tables()), rule_id, classification, origin, entity)
     return {"total": len(findings), "offset": offset, "limit": limit,
             "findings": [dq_summary.finding_dict(f) for f in findings[offset:offset + limit]]}
 
 
 def dq_findings_csv(rule_id=None, classification=None, origin=None, entity=None) -> str:
-    return dq_summary.to_csv(dq_summary.filter_findings(run_all(source_tables()), rule_id, classification,
+    return dq_summary.to_csv(dq_summary.filter_findings(findings_for(source_tables()), rule_id, classification,
                                                         origin, entity))
 
 

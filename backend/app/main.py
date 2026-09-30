@@ -26,7 +26,15 @@ async def lifespan(_app: FastAPI):
     yield
 
 
+def docs_urls() -> dict:
+    """Interactive docs and the OpenAPI schema are unauthenticated routes, so the secured profile turns them off."""
+    if security.is_secured():
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+
 app = FastAPI(
+    **docs_urls(),
     title="Manufacturing Analytics Pilot API",
     description="Synthetic-data manufacturing analytics pilot. All data is "
     "fictional; this is not connected to any real ERP/MES/BI system.",

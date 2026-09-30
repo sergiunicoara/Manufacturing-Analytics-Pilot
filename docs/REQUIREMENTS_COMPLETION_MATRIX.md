@@ -73,3 +73,20 @@ Baseline at review start: 95 passed. **Final verification (2026-09-30, commit `c
 | D8 | Local leftovers | Disposable restore database and `.bak` removed; scenario runs kept as audit history; test logins kept for the live tests | Verified absent |
 | D10 | Cold start: first page about 50 s, Executive Story about 231 s | `LeadTimeCalculator` (indexed routing/BOM lookups, shared across scenarios); background warm-up at start; `/health` reports progress | Story 231 s to 1.4 s; all five cases' weekly series and KPIs identical to the earlier values; `test_leadtime_equivalence.py` compares more than 1,000 (item, week, scenario) results against a frozen copy of the old code |
 | D9 | Vulnerable pins (`starlette` via `fastapi`, `pytest`, `python-dotenv`) | Raised to `fastapi 0.142.2`, `starlette 1.7.0`, `pytest 9.0.3`, `python-dotenv 1.2.2` | `pip-audit` clean; full suite passes on the new pins |
+
+## E. Code-review findings (2026-09-30) and their fixes
+
+| # | Finding | Fix | Verification |
+|---|---|---|---|
+| E1 | Backup used `INIT` and could overwrite an existing `.bak` | Refuses an existing file (`sys.dm_os_file_exists`); `COPY_ONLY, NOINIT, CHECKSUM` | Live: backup onto an existing file refused, file intact; unit tests |
+| E2 | `/docs`, `/redoc`, `/openapi.json` unauthenticated in the secured profile | Disabled when `APP_PROFILE=secured` | Live: 404 with and without a key; demo still 200 |
+| E3 | Copilot DQ lookup matched bare record ids across entities | `finding_concerns_item` scopes by entity | Unit test |
+| E4 | Table fingerprint depended on row order with ties | Per-row hashes, sorted | Unit test |
+| E5 | `security_setup` truncated long passwords and could not rotate | `nvarchar(max)`, 128-char validation, create-or-rotate | Live: rotated; 129 characters rejected |
+| E6 | RESTORE MOVE names collided for several files | Named by `FileId`; FILESTREAM/full-text refused | Live restore round trip (100,625 rows, no mismatches) |
+| E7 | LLM payload minimisation was a deny-list | Allow-list `LLM_ALLOWED_KEYS` | Unit test |
+| E8 | Report scripts rebuilt the lead-time index per call | One `LeadTimeCalculator` per table set | Existing equivalence tests |
+| E9 | DQ findings recomputed six times per dashboard build | `findings_for(tables)` cache | Unit test |
+| E10 | Buffer row crashed without a computed range | Blocked row, confidence `NONE` | Unit test |
+
+Final strict run (`REQUIRE_DB_TESTS=1`, secured logins exported): 219 passed, 0 skipped.

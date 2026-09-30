@@ -6,7 +6,7 @@ import datetime as dt
 import pandas as pd
 
 from app.analytics.data_access import load_all_tables
-from app.analytics.period_engine import compute_lead_time_for_item
+from app.analytics.leadtime import LeadTimeCalculator
 from app.analytics.scenario_demo import cab100_item_ids, run_four_intervention_comparison
 from app.db.connection import get_engine
 from app.synthetic.timeline import REFERENCE_DATE
@@ -17,6 +17,8 @@ def main() -> None:
     horizon = [REFERENCE_DATE + dt.timedelta(weeks=i) for i in range(12)]
     cases = run_four_intervention_comparison(tables, horizon, demand_multiplier=1.4)
     cab_ids = cab100_item_ids(tables["items"])
+    calculator = LeadTimeCalculator(tables["routing_headers"], tables["routing_operations"], tables["items"],
+                                    tables["bom_headers"], tables["bom_components"])
     for label in ("BASELINE", "DEMAND_SHOCK_ONLY", "BUFFER_ONLY", "CAPACITY_ONLY", "COMBINED"):
         output = cases[label]
         state = {(r.work_centre_id, r.period_start_date): r for r in output.work_centre_results}
@@ -25,8 +27,7 @@ def main() -> None:
             vals = {k: 0.0 for k in ("processing_days", "queue_days", "transfer_days", "total_days")}
             total = 0.0
             for item_id in cab_ids:
-                lt = compute_lead_time_for_item(item_id, period, tables["routing_headers"], tables["routing_operations"],
-                    state, tables["items"], tables["bom_headers"], tables["bom_components"])
+                lt = calculator.compute(item_id, period, state)
                 material = next((x for x in output.material_series(item_id) if x.period_start_date == period), None)
                 weight = material.gross_requirement if material else 0.0
                 if lt is None or weight <= 0:

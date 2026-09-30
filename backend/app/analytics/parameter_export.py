@@ -61,12 +61,15 @@ def build_package(policies: list, buffers: list[dict], candidates: list[dict], s
             provenance="DERIVED",
             confidence=p.confidence, blockers=list(p.blockers), rationale=" ".join(p.reasons)))
     for b in buffers:
+        low, high = b.get("recommended_min"), b.get("recommended_max")
+        computed = low is not None and high is not None
         common = dict(item_code=b["item_code"], site_code=site_code, units="units", effective_date=effective_date,
-                      provenance="ASSUMED", confidence=b["confidence"],
-                      blockers=[] if b.get("recommended_min") is not None else ["No range computed."],
-                      rationale=b["reason"])
-        rows.append(ParameterRow(parameter="analytical_buffer_min_qty", proposed_value=f"{b['recommended_min']:.2f}", **common))
-        rows.append(ParameterRow(parameter="analytical_buffer_max_qty", proposed_value=f"{b['recommended_max']:.2f}", **common))
+                      provenance="ASSUMED", confidence=b["confidence"] if computed else "NONE",
+                      blockers=[] if computed else ["No range computed."], rationale=b.get("reason", ""))
+        rows.append(ParameterRow(parameter="analytical_buffer_min_qty",
+                                 proposed_value=f"{low:.2f}" if computed else "", **common))
+        rows.append(ParameterRow(parameter="analytical_buffer_max_qty",
+                                 proposed_value=f"{high:.2f}" if computed else "", **common))
     for c in candidates:
         rows.append(ParameterRow(item_code=c["item_code"], site_code=site_code, parameter="decoupling_candidate",
                                  proposed_value="true", units="flag", effective_date=effective_date,

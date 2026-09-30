@@ -82,12 +82,22 @@ def database_exists(name: str) -> bool:
     return rows[0]["id"] is not None
 
 
+def backup_file_exists(path: str) -> bool:
+    validate_backup_path(path)
+    rows = _exec(f"SELECT file_exists FROM sys.dm_os_file_exists(N'{path}')", fetch=True)
+    return bool(rows and rows[0]["file_exists"])
+
+
 def backup(database: str, path: str) -> None:
+    """Copy-only backup to a NEW file. An existing file is never overwritten or appended to (it may be a
+    client backup); NOINIT also guarantees that a file created between the check and the backup is kept."""
     validate_name(database)
     validate_backup_path(path)
     if not database_exists(database):
         raise RestoreRefused(f"Source database {database} does not exist.")
-    _exec(f"BACKUP DATABASE [{database}] TO DISK = N'{path}' WITH COPY_ONLY, INIT, CHECKSUM, "
+    if backup_file_exists(path):
+        raise RestoreRefused(f"Backup file {path} already exists; refusing to overwrite it. Choose a new path.")
+    _exec(f"BACKUP DATABASE [{database}] TO DISK = N'{path}' WITH COPY_ONLY, NOINIT, CHECKSUM, "
           f"NAME = N'{database} pilot copy-only backup'")
 
 
@@ -97,9 +107,29 @@ def inspect(path: str) -> dict:
     files = _exec(f"RESTORE FILELISTONLY FROM DISK = N'{path}'", fetch=True)
     _exec(f"RESTORE VERIFYONLY FROM DISK = N'{path}' WITH CHECKSUM")
     return {"database": header[0]["DatabaseName"], "backup_finish": str(header[0]["BackupFinishDate"]),
-            "files": [{"logical_name": f["LogicalName"], "type": f["Type"], "physical_name": f["PhysicalName"]}
-                      for f in files],
+            "files": [{"logical_name": f["LogicalName"], "type": f["Type"], "physical_name": f["PhysicalName"],
+                       "file_id": int(f["FileId"])} for f in files],
             "verifyonly": "passed (media readable and checksums valid; not proof of a usable restore)"}
+
+
+def move_clauses(files: list[dict], target: str) -> list[str]:
+    """One distinct physical file per backup file, named by FileId: the primary data file (FileId 1) is
+    <target>.mdf, other data files <target>_<id>.ndf, log files <target>_log<id>.ldf."""
+    moves = []
+    for f in files:
+        logical = f["logical_name"]
+        if not NAME_PATTERN.fullmatch(logical):
+            raise RestoreRefused(f"Unexpected logical file name {logical!r} in backup.")
+        file_id = int(f["file_id"])
+        if f["type"] == "L":
+            name = f"{target}_log{file_id}.ldf"
+        elif f["type"] == "D":
+            name = f"{target}.mdf" if file_id == 1 else f"{target}_{file_id}.ndf"
+        else:
+            raise RestoreRefused(f"File {logical!r} has type {f['type']!r} (full-text or FILESTREAM); "
+                                 "restore it manually with an explicit MOVE.")
+        moves.append(f"MOVE N'{logical}' TO N'{DATA_DIRECTORY}/{name}'")
+    return moves
 
 
 def restore(path: str, target: str) -> dict:
@@ -109,13 +139,7 @@ def restore(path: str, target: str) -> dict:
         raise RestoreRefused(f"Target database {target} already exists; refusing to overwrite. "
                              "Choose a new name. WITH REPLACE is never used.")
     info = inspect(path)
-    moves = []
-    for f in info["files"]:
-        logical = f["logical_name"]
-        if not NAME_PATTERN.fullmatch(logical):
-            raise RestoreRefused(f"Unexpected logical file name {logical!r} in backup.")
-        suffix = "_log.ldf" if f["type"] == "L" else ".mdf" if not moves else f"_{len(moves)}.ndf"
-        moves.append(f"MOVE N'{logical}' TO N'{DATA_DIRECTORY}/{target}{suffix}'")
+    moves = move_clauses(info["files"], target)
     _exec(f"RESTORE DATABASE [{target}] FROM DISK = N'{path}' WITH {', '.join(moves)}, CHECKSUM, RECOVERY")
     return {"restored": target, "from": path, "moves": moves}
 

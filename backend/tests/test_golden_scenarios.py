@@ -17,11 +17,13 @@ HORIZON = [REFERENCE_DATE + dt.timedelta(weeks=w) for w in range(12)]
 
 def test_executive_story_lead_time_series_uses_subassembly_route_and_all_five_cases(tables):
     import pytest
-    from app.analytics.period_engine import compute_lead_time_for_item
+    from app.analytics.leadtime import LeadTimeCalculator
     from app.analytics.scenario_demo import cab100_item_ids, run_four_intervention_comparison
 
     cases = run_four_intervention_comparison(tables, HORIZON, demand_multiplier=1.4)
     ids = cab100_item_ids(tables["items"])
+    calculator = LeadTimeCalculator(tables["routing_headers"], tables["routing_operations"], tables["items"],
+                                    tables["bom_headers"], tables["bom_components"])
     series = {}
     for case in ("BASELINE", "DEMAND_SHOCK_ONLY", "BUFFER_ONLY", "CAPACITY_ONLY", "COMBINED"):
         output = cases[case]
@@ -31,8 +33,7 @@ def test_executive_story_lead_time_series_uses_subassembly_route_and_all_five_ca
             values = {key: 0.0 for key in ("processing_days", "queue_days", "transfer_days", "total_days")}
             total_weight = 0.0
             for item_id in ids:
-                lt = compute_lead_time_for_item(item_id, period, tables["routing_headers"],
-                    tables["routing_operations"], state, tables["items"], tables["bom_headers"], tables["bom_components"])
+                lt = calculator.compute(item_id, period, state)
                 mr = next((r for r in output.material_series(item_id) if r.period_start_date == period), None)
                 weight = mr.gross_requirement if mr else 0.0
                 if lt is None or weight <= 0:

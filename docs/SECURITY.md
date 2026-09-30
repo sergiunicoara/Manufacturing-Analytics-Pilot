@@ -7,13 +7,13 @@ The pilot has two profiles. **demo** runs locally on synthetic data only and is 
 | Control | Implemented | Tested (how) | Needs client / infrastructure |
 |---|---|---|---|
 | **Secured profile refuses unsafe start-up:** default password, `sa` login, missing API keys, keys under 24 characters, no CORS origins | `app/security.py::validate_settings`, `main.py` | `tests/test_security.py`; live: import with defaults raised `RuntimeError` listing all five problems | — |
-| **API authentication:** reader key for every data route, operator key for `POST /api/scenarios/run` and `/copilot/ask`; constant-time comparison; keys never echoed | `app/security.py`, router and route dependencies | Unit tests (401/403 matrix, route introspection). Live secured instance: no key 401, wrong key 401, reader GET 200, reader POST 403, reader copilot 403, operator copilot 200 | SSO / identity provider for named users |
+| **API authentication:** reader key for every data route, operator key for `POST /api/scenarios/run` and `/copilot/ask`; constant-time comparison; keys never echoed; `/docs`, `/redoc` and `/openapi.json` are disabled in the secured profile (they would be unauthenticated) | `app/security.py`, router and route dependencies | Unit tests (401/403 matrix, route introspection). Live secured instance: no key 401, wrong key 401, reader GET 200, reader POST 403, reader copilot 403, operator copilot 200 | SSO / identity provider for named users |
 | **No browser credentials in bundles:** the secured compose override does not start the frontend | `docker-compose.secured.yml` | `docker compose ... config --services` lists only `sqlserver`, `api` | Authenticating reverse proxy or SSO in front of a UI |
 | **Local ports bound to 127.0.0.1** in both profiles (demo and secured) | `docker-compose.yml`, `docker-compose.secured.yml` | `docker compose config`, and `docker ps` on the running stacks, show `127.0.0.1` for 1433, 8000 and 5173 | Network segmentation on the real host |
 | **Secrets never in Git or logs:** `.env` ignored; compose requires `${VAR:?}`; logins created from environment variables and passed as query parameters, quoted with `QUOTENAME` | `.gitignore`, `app/db/security_setup.py` | Live: API keys found 0 times in the secured instance's log | Secret store (vault) on the host |
 | **Least-privilege SQL identities** | `db/migrations/200_security_roles.sql`, `app/db/security_setup.py` | `tests/test_least_privilege.py` (live, passed): `pilot_reader` reads `vw_*` only and is denied base tables and deletes. `pilot_app` reads sources and writes only its 7 result tables; denied DDL, `DROP`, source writes and role changes. The secured API ran its full context build as `pilot_app` | Client DBA review; separate extraction login on the client side |
 | **External LLM only by explicit opt-in** (`ALLOW_EXTERNAL_LLM=true` plus a key) in the secured profile; deterministic evidence-only by default | `security.llm_allowed` | Unit test: with evidence and a key but no opt-in, the provider is never called; existing test: no call without evidence | Client authorisation to send any data to a provider |
-| **Payload minimisation** before an LLM call: record, customer and entity identifiers removed; lists capped at 20 | `security.minimise_for_llm` | Unit test | — |
+| **Payload minimisation** before an LLM call: an allow-list of numeric, label and method fields (`security.LLM_ALLOWED_KEYS`); record ids, descriptions, detected values and free-text assumptions are never sent; lists capped at 20 | `security.minimise_for_llm` | Unit tests (`test_security.py`, `test_review_fixes.py`) | — |
 | **Safe restore:** validated names and paths, refuses to overwrite, copy-only backups, never `WITH REPLACE` | `app/db/restore.py` | `tests/test_restore_safety.py` (16), including an injection attempt refused; live round trip into a new database | Restore on the approved host |
 | **Dependency checks:** `pip-audit` and `npm audit` (commands in OPERATIONS.md); pins raised 2026-09-30 after `pip-audit` flagged `starlette`, `pytest` and `python-dotenv` | `backend/requirements.txt` | Both audits clean on 2026-09-30; full suite passed on the new pins | Periodic re-run; a pin is a snapshot |
 | **Read-only toward the ERP;** parameter export has `erp_write_back: false` | `parameter_export.py` | Schema test rejects `erp_write_back: true` | — |
@@ -26,12 +26,14 @@ Every value below must come from the environment or a secret store; `docker-comp
 # set these in the shell (values from a password manager; never commit them):
 #   MSSQL_SA_PASSWORD, PILOT_APP_PASSWORD, PILOT_READER_API_KEYS, PILOT_OPERATOR_API_KEYS (each key >= 24 characters), ALLOWED_ORIGINS
 docker compose -f docker-compose.yml -f docker-compose.secured.yml up -d sqlserver api
-docker exec -e PILOT_READER_PASSWORD -e PILOT_APP_PASSWORD -w /app mfg_pilot_api python -m app.db.security_setup   # once, as administrator
+docker exec -e PILOT_READER_PASSWORD -e PILOT_APP_PASSWORD -w /app mfg_pilot_api python -m app.db.security_setup   # as administrator; creates the logins, or rotates their passwords
 ```
 
 Clients send `X-API-Key: <key>`. To return to the demo profile, run `docker compose up -d --no-deps api` without the override.
 
 **Verified live on 2026-09-30** by running the real override (not a scratch instance): the API started with `APP_PROFILE=secured`, the `pilot_app` login, an empty SA password and the external-LLM opt-in off; `/health` without a key 200; data routes without a key or with a wrong key 401; a reader key 200 on pages, the DQ export (all 641 findings) and the Executive Story; a reader key 403 on `POST /api/scenarios/run` and `POST /copilot/ask`; an operator key 200 on the copilot with `llm_used: false`; a cross-origin preflight from an unlisted origin got no allow-origin header; the warm-up and the reference-case build completed under the least-privilege login; the secured log had no API keys and no errors or permission denials.
+
+`security_setup` rejects passwords longer than SQL Server's 128-character limit instead of truncating them, and re-running it with new values rotates the passwords of existing logins.
 
 ## What leaves the process
 

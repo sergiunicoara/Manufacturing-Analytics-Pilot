@@ -65,14 +65,15 @@ def main() -> None:
     lead_time_item = cab100_ids[0]
     avg_minutes_per_unit = _avg_minutes_per_unit_by_work_centre(tables["routing_operations"])
     wc_results_by_period = {(r.work_centre_id, r.period_start_date): r for r in baseline.work_centre_results}
-    from app.analytics.period_engine import compute_lead_time_for_item
+    from app.analytics.leadtime import LeadTimeCalculator
+    calculator = LeadTimeCalculator(tables["routing_headers"], tables["routing_operations"], tables["items"],
+                                    tables["bom_headers"], tables["bom_components"])
 
     trend_rows = []
     for period in horizon:
         total_backlog = sum(r.backlog_hours_end for r in baseline.work_centre_results if r.period_start_date == period)
         total_wip = sum(r.wip_qty for r in baseline.work_centre_results if r.period_start_date == period)
-        lt = compute_lead_time_for_item(lead_time_item, period, tables["routing_headers"], tables["routing_operations"], wc_results_by_period,
-            tables["items"], tables["bom_headers"], tables["bom_components"])
+        lt = calculator.compute(lead_time_item, period, wc_results_by_period)
         trend_rows.append({
             "week": period, "total_backlog_hours": round(total_backlog, 1), "total_wip_qty": round(total_wip, 1),
             "cab100_lead_time_days": round(lt.total_days, 2) if lt else None,

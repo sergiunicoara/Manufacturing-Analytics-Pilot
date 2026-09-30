@@ -72,7 +72,7 @@ Three test files need SQL Server: SQL/Python parity of the read models, and (wit
 docker exec -e REQUIRE_DB_TESTS=1 -e PILOT_READER_PASSWORD -e PILOT_APP_PASSWORD -w /app mfg_pilot_api python -m pytest -q -rs
 ```
 
-Create the two logins once with `python -m app.db.security_setup`, supplying passwords through the `PILOT_READER_PASSWORD` and `PILOT_APP_PASSWORD` environment variables (from a password manager or a local ignored file; never commit them). The final line of a healthy run has no skips.
+Create the two logins (or rotate their passwords) with `python -m app.db.security_setup`, supplying passwords through the `PILOT_READER_PASSWORD` and `PILOT_APP_PASSWORD` environment variables (from a password manager or a local ignored file; never commit them). The final line of a healthy run has no skips.
 
 ## Checkpoint report scripts
 

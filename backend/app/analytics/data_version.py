@@ -20,13 +20,13 @@ CODE_PACKAGES = ("analytics", "dq")
 
 
 def table_fingerprint(frame: pd.DataFrame) -> str:
-    """Content hash independent of row order and load timestamps."""
+    """Content hash independent of row order and load timestamps: rows are hashed individually and the
+    row hashes are sorted, so ties in any column cannot make the result depend on SQL return order."""
     columns = sorted(c for c in frame.columns if c not in AUDIT_COLUMNS)
-    data = frame[columns]
-    if len(data):
-        data = data.sort_values(columns[0], kind="mergesort").reset_index(drop=True)
     digest = hashlib.sha256(",".join(columns).encode())
-    digest.update(pd.util.hash_pandas_object(data.astype(str), index=False).values.tobytes())
+    row_hashes = pd.util.hash_pandas_object(frame[columns].astype(str), index=False).to_numpy()
+    row_hashes.sort()
+    digest.update(row_hashes.tobytes())
     return digest.hexdigest()
 
 

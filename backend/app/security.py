@@ -18,7 +18,18 @@ from app.config import DEMO_DEFAULT_PASSWORD, settings
 
 SECURED = "secured"
 PROFILES = ("demo", SECURED)
-REDACTED_KEYS = frozenset({"source_record_id", "record_id", "customer_id", "affected_entity_id"})
+# Keys an external model may receive in the secured profile: numbers, labels and method text needed to
+# explain a result. Everything else (record ids, descriptions, detected values, free-text assumptions)
+# stays in the process. Labels are business codes (item, work centre, scenario), never customer data.
+LLM_ALLOWED_KEYS = frozenset({
+    "tool", "result", "metrics", "rows", "series", "evidence", "inputs", "name", "label", "value", "case",
+    "title", "unit", "units", "formula", "provenance", "time_scope", "coverage", "calculation_trace",
+    "classification", "impact_scope", "origin", "rule_id", "findings", "unique_records", "records_affected_pct",
+    "period_expense", "buffer_capital", "inventory_carrying_cost", "intervention_cost", "ending_backlog_hours",
+    "average_inventory_capital", "policy", "confidence", "n_observations", "coverage_pct",
+    "recorded_p50_hours", "recorded_p85_hours", "recorded_p95_hours", "modelled_standard_p50_hours",
+    "data_origin", "valid_observations", "eligible_operations",
+})
 MAX_LIST_ITEMS = 20
 
 
@@ -81,11 +92,11 @@ def llm_allowed() -> bool:
 
 
 def minimise_for_llm(value):
-    """In the secured profile, drop record identifiers and cap lists before anything leaves the process."""
+    """In the secured profile, keep only allow-listed keys and cap lists before anything leaves the process."""
     if not is_secured():
         return value
     if isinstance(value, dict):
-        return {k: minimise_for_llm(v) for k, v in value.items() if k not in REDACTED_KEYS}
+        return {k: minimise_for_llm(v) for k, v in value.items() if k in LLM_ALLOWED_KEYS}
     if isinstance(value, list):
         return [minimise_for_llm(v) for v in value[:MAX_LIST_ITEMS]]
     return value

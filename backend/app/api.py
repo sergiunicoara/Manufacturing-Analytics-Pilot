@@ -168,6 +168,13 @@ class CopilotRequest(BaseModel):
     scenario: ScenarioRequest | None = None
 
 
+def finding_concerns_item(finding: dict, item_id: str) -> bool:
+    """A finding is about an item only when its entity is the item master or its blocking scope names that
+    item; an inventory row or order that happens to share the number is a different record."""
+    return ((finding["entity"] == "items" and str(finding["record_id"]) == item_id)
+            or (finding.get("affected_entity_type") == "item" and str(finding.get("affected_entity_id")) == item_id))
+
+
 def _deterministic_tool(request: CopilotRequest) -> tuple[str, dict | list]:
     question = request.question.lower()
     tool = request.tool
@@ -193,7 +200,7 @@ def _deterministic_tool(request: CopilotRequest) -> tuple[str, dict | list]:
     if tool == "get_dq_findings":
         if item_match:
             findings = dashboard.dq_findings(limit=10_000)["findings"]
-            matches = [f for f in findings if item_match.group(1) in {str(f["record_id"]), str(f["affected_entity_id"])}]
+            matches = [f for f in findings if finding_concerns_item(f, item_match.group(1))]
             return tool, [{**f, "evidence": evidence(f["classification"], "ANALYTICS_METHODS.md#data-quality",
                                                      [source("rule", f["rule_id"], f["record_id"], "DERIVED"),
                                                       source("entity", f["entity"], f["record_id"])],
