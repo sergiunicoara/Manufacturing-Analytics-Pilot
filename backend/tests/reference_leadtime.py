@@ -1,5 +1,9 @@
 """FROZEN reference: the pandas-based lead-time implementation as it was before LeadTimeCalculator.
-Kept only so tests can prove the indexed implementation returns identical numbers. Do not edit or use in app code."""
+Kept only so tests can prove the indexed implementation returns identical numbers. Do not use in app code.
+
+Only deliberate rule changes are mirrored here, so the equivalence test keeps testing indexing and nothing else:
+  2026-09-30  a centre with no usable capacity figure makes the route unavailable (None), not zero wait;
+  2026-10-01  routings that exist but are not effective in the week make the route unavailable (None)."""
 from __future__ import annotations
 
 import datetime as dt
@@ -45,11 +49,12 @@ def reference_compute_lead_time_for_item(
 
     def route_metrics(route_item: int, qty_per_fg: float) -> tuple[float, float, float] | None:
         candidates = route_headers.loc[route_headers["item_id"] == route_item]
+        has_routing = not candidates.empty
         if "effective_from" in candidates:
             candidates = candidates.loc[candidates["effective_from"].apply(_as_date) <= period_start_date]
             candidates = candidates.loc[candidates["effective_to"].apply(lambda v: pd.isna(v) or _as_date(v) >= period_start_date)]
         if candidates.empty:
-            return (0.0, 0.0, 0.0)
+            return None if has_routing else (0.0, 0.0, 0.0)
         if len(candidates) > 1:
             return None
         routing_id = candidates.iloc[0]["routing_id"]
@@ -76,11 +81,12 @@ def reference_compute_lead_time_for_item(
             wc_id = op["work_centre_id"]
             if pd.notna(wc_id):
                 wc = wc_results_by_period.get((int(wc_id), period_start_date))
-                if wc is not None and not math.isnan(wc.effective_hours_per_workday):
-                    if wc.effective_hours_per_workday > 0:
-                        operating_days = max(1, float(wc.effective_days_per_week))
-                        wait_workdays = wc.backlog_hours_at_entry / wc.effective_hours_per_workday
-                        queue += wait_workdays * 7.0 / operating_days
+                if (wc is None or math.isnan(wc.effective_hours_per_workday) or wc.effective_hours_per_workday <= 0
+                        or math.isnan(wc.backlog_hours_at_entry)):
+                    return None
+                operating_days = max(1, float(wc.effective_days_per_week))
+                wait_workdays = wc.backlog_hours_at_entry / wc.effective_hours_per_workday
+                queue += wait_workdays * 7.0 / operating_days
         return processing, queue, transfer
 
     def longest_path(node: int, qty: float, seen: frozenset[int]) -> tuple[float, float, float, tuple[int, ...]] | None:

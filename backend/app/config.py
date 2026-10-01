@@ -68,28 +68,32 @@ class Settings:
     # OVERLOADED work centre is reclassified as a CANDIDATE_CONSTRAINT.
     candidate_constraint_min_consecutive_periods: int = 3
 
+    # Open purchase-order lines whose expected date is at most this many days before the first modelled
+    # week are treated as past due and available in week 1; older lines are excluded (and listed on the
+    # engine output), because a long-overdue open line is more likely stale data than supply.
+    past_due_receipt_max_days: int = 28
+
     # Reproducibility tolerance for computed floating-point outputs [CORR-11].
     reproducibility_relative_tolerance: float = 1e-9
 
-    @property
-    def mssql_odbc_url(self) -> str:
+    def odbc_url(self, user: str, password: str, database: str) -> str:
+        """The one place the SQL Server connection URL (driver, TLS options) is built."""
         driver = "ODBC Driver 18 for SQL Server"
         return (
-            f"mssql+pyodbc://{quote_plus(self.mssql_user)}:{quote_plus(self.mssql_password)}"
-            f"@{self.mssql_host}:{self.mssql_port}/{self.mssql_database}"
+            f"mssql+pyodbc://{quote_plus(user)}:{quote_plus(password)}"
+            f"@{self.mssql_host}:{self.mssql_port}/{database}"
             f"?driver={driver.replace(' ', '+')}&TrustServerCertificate=yes"
         )
+
+    @property
+    def mssql_odbc_url(self) -> str:
+        return self.odbc_url(self.mssql_user, self.mssql_password, self.mssql_database)
 
     @property
     def mssql_odbc_url_master(self) -> str:
         """Connection to the `master` DB, used only to run the DDL bootstrap
         (which itself creates the target database)."""
-        driver = "ODBC Driver 18 for SQL Server"
-        return (
-            f"mssql+pyodbc://{quote_plus(self.mssql_user)}:{quote_plus(self.mssql_password)}"
-            f"@{self.mssql_host}:{self.mssql_port}/master"
-            f"?driver={driver.replace(' ', '+')}&TrustServerCertificate=yes"
-        )
+        return self.odbc_url(self.mssql_user, self.mssql_password, "master")
 
 
 settings = Settings()

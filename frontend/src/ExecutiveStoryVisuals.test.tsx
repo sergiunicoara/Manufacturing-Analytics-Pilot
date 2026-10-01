@@ -121,4 +121,17 @@ describe("ExecutiveStoryVisuals", () => {
     await user.click(cards[4]);
     expect(onEvidence).toHaveBeenCalledTimes(1);
   });
+
+  it("shows n/a in the capacity card when an hours value is missing", async () => {
+    const story = leadStory();
+    story.capacity_intervention[0] = { ...story.capacity_intervention[0], effective_hours_per_week_current: null as any,
+      effective_hours_per_week_target: null as any, target_multiplier: null as any };
+    mockApi({ "/api/executive-story": story });
+    render(<ExecutiveStoryVisuals onEvidence={vi.fn()} />);
+    const card = (await screen.findByText("Welding")).closest(".operation-card") as HTMLElement;
+    expect(within(card).getAllByText("n/a")).toHaveLength(2);
+    expect(within(card).getByText("80.0h/week")).toBeInTheDocument();
+    expect(card).toHaveTextContent("availability for n/a.");
+    expect(card).not.toHaveTextContent(/(^|[^0-9.])h\/week/);
+  });
 });

@@ -15,7 +15,7 @@ AUDIT_COLUMNS = frozenset({"created_at", "updated_at"})
 # Analytical constants read from app.config by the analytics/dq code; infrastructure settings are excluded.
 ANALYTICAL_SETTINGS = ("forecast_consumption_window_weeks", "utilization_threshold_backlog_switch",
                        "max_bounded_queue_time_days", "candidate_constraint_min_consecutive_periods",
-                       "reproducibility_relative_tolerance", "synthetic_seed")
+                       "past_due_receipt_max_days", "reproducibility_relative_tolerance", "synthetic_seed")
 CODE_PACKAGES = ("analytics", "dq")
 
 

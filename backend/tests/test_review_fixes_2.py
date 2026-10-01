@@ -177,7 +177,7 @@ def test_failed_bi_export_keeps_the_previous_pair(tmp_path, monkeypatch):
     real_write_text = type(tmp_path).write_text
 
     def failing(self, *args, **kwargs):
-        if self.name.endswith(".meta.json.tmp"):
+        if ".meta.json." in self.name and self.name.endswith(".tmp"):
             raise OSError("disk full")
         return real_write_text(self, *args, **kwargs)
 

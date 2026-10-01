@@ -55,7 +55,10 @@ test("stage records can be filtered and paged", async ({ page }) => {
   await expect(page.getByRole("button", { name: "← Previous" })).toBeDisabled();
 });
 
+// Opt-in: if the API has an Anthropic key (demo profile), asking the copilot sends the question and evidence
+// to the external model. Set PILOT_E2E_COPILOT=1 only when that is intended.
 test("the copilot answers from deterministic evidence", async ({ page }) => {
+  test.skip(process.env.PILOT_E2E_COPILOT !== "1", "set PILOT_E2E_COPILOT=1 to include the copilot (may call the external LLM)");
   await page.goto("/");
   await page.getByLabel("Question").press("Enter");
   await expect(page.getByText("Raw deterministic evidence")).toBeVisible();

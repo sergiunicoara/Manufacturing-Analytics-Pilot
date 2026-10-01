@@ -93,7 +93,7 @@ Final strict run (`REQUIRE_DB_TESTS=1`, secured logins exported): 219 passed, 0 
 
 ## F. UI tests
 
-`frontend`: `npm test` runs 66 Vitest tests (`DashboardApp.test.tsx`, `ExecutiveStoryVisuals.test.tsx`) against a mocked API and mocked Plotly. They cover loading, API errors, stale responses, all twelve pages, the evidence drawer, chart click-through, the scenario lab, stage-record filters and paging, the copilot and the executive story. Deliberately breaking three behaviours (stale-response guard, pager step, drawer reset on navigation) made the matching tests fail. Not covered: real Plotly rendering, styling and a real browser.
+`frontend`: `npm test` runs 67 Vitest tests (`DashboardApp.test.tsx`, `ExecutiveStoryVisuals.test.tsx`) against a mocked API and mocked Plotly. They cover loading, API errors, stale responses, all twelve pages, the evidence drawer, chart click-through, the scenario lab, stage-record filters and paging, the copilot and the executive story. Deliberately breaking three behaviours (stale-response guard, pager step, drawer reset on navigation) made the matching tests fail. Not covered: real Plotly rendering, styling and a real browser.
 
 `npm run test:e2e` (Playwright, system Chrome, against the running stack; read-only) adds a 5-test browser smoke test: every page loads without console errors, a chart renders and a metric opens its evidence, the executive story, stage-record filtering, and the copilot. It found two real defects that are now fixed: a missing favicon (404 in every page load) and a sidebar that could not scroll, which hid the Executive Story link on screens shorter than about 780 px.
 
@@ -128,4 +128,23 @@ Full run after these fixes: backend 233 passed (strict, none skipped), UI 65, br
 | H6 | Charts redrew whenever the evidence drawer opened | Stable evidence handler (`useCallback`) | UI test |
 
 Full run: backend 242 passed (strict, none skipped), UI 66, browser 5. The five reference backlogs are unchanged: 74.4 / 212.2 / 93.1 / 164.4 / 77.3.
+
+## I. Fourth round (2026-10-01): review of the previous two commits
+
+| # | Finding | Fix | Verification |
+|---|---|---|---|
+| I1 | A blocked item's receipt was usable only if it arrived in a demand week | The recorded on-hand of a blocked item (and any buffer decision on it) is held apart and never usable; receipts are usable whenever they arrive | `test_review_fixes_4.py`; in the reference cases only item 44 changes (its leftover receipt now covers weeks 2-4); backlogs, work-centre results and lead times identical |
+| I2 | Past-due receipts of any age were credited to week 1 | `past_due_receipt_max_days` (28, part of the data version); older lines are excluded and listed in `stale_receipts_excluded` | Unit tests; the one real past-due line is 3 days overdue and still counts |
+| I3 | A week between routing revisions loaded zero hours | Capacity reports the item's operations as excluded; lead time returns unavailable (an item with no routing at all is unchanged) | Unit tests (no gaps in the synthetic data) |
+| I4 | An FG with no BOM revision effective on the latest order date got a confident policy | INSUFFICIENT_EVIDENCE with a "no current BOM revision" blocker | Unit tests |
+| I5 | The frozen lead-time reference still used the old missing-capacity rule | The reference mirrors the deliberate rule changes, listed in its docstring | Unit tests with a zero-capacity week and a routing gap |
+| I6 | The "read-only" smoke test could call the external LLM | Copilot step opt-in with `PILOT_E2E_COPILOT=1` | Smoke run: 4 passed, 1 skipped |
+| I7 | Concurrent BI exports shared temporary files | Unique temporary names per export | Unit test |
+| I8 | The capacity card showed a bare "h/week" for missing hours | "n/a" | UI test |
+| I9 | Routing data without `effective_to` crashed the engine | Missing end-date column means open-ended | Unit test |
+| I10 | `security_setup` duplicated the connection URL builder | `Settings.odbc_url(user, password, database)` used by both | Unit test |
+
+Open decision, not changed: a buffer decision on an entity-blocked item stays unusable, as before. Counting it would move BUFFER_ONLY from 93.1 to 70.0 and COMBINED from 77.3 to 60.1 backlog hours.
+
+Full run: backend 255 passed (strict, none skipped), UI 67, browser 4 passed and 1 skipped (copilot, opt-in). The five reference backlogs are unchanged: 74.4 / 212.2 / 93.1 / 164.4 / 77.3.
 

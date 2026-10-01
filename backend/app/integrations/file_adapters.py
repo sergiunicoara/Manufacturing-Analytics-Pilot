@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -51,7 +52,10 @@ class FileBIExportAdapter:
             raise AdapterError(problems)
         self.directory.mkdir(parents=True, exist_ok=True)
         path, meta_path = self._paths(name)
-        temp_csv, temp_meta = path.with_name(path.name + ".tmp"), meta_path.with_name(meta_path.name + ".tmp")
+        # Unique per export, so two concurrent exports of the same name never share or delete each other's files.
+        token = uuid.uuid4().hex
+        temp_csv = path.with_name(f"{path.name}.{token}.tmp")
+        temp_meta = meta_path.with_name(f"{meta_path.name}.{token}.tmp")
         try:
             frame.to_csv(temp_csv, index=False)
             digest = hashlib.sha256(temp_csv.read_bytes()).hexdigest()

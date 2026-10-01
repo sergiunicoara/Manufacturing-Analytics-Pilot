@@ -11,7 +11,6 @@ interpolated into SQL text in Python, printed or logged. An existing login gets 
 from __future__ import annotations
 
 import os
-from urllib.parse import quote_plus
 
 from app.db.connection import get_engine
 from app.db.restore import validate_name
@@ -83,9 +82,7 @@ def admin_urls(database: str) -> tuple[str, str]:
     if not password:
         raise SystemExit("Set MSSQL_ADMIN_PASSWORD (the administrator login); the API's own login cannot create logins.")
     user = os.environ.get("MSSQL_ADMIN_USER", "sa")
-    base = (f"mssql+pyodbc://{quote_plus(user)}:{quote_plus(password)}@{settings.mssql_host}:{settings.mssql_port}/{{db}}"
-            "?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes")
-    return base.replace("{db}", "master"), base.replace("{db}", database)
+    return settings.odbc_url(user, password, "master"), settings.odbc_url(user, password, database)
 
 
 def setup(database: str | None = None) -> list[str]:

@@ -108,6 +108,9 @@ class PeriodEngineOutput:
     material_results: list[MaterialRequirementPeriodResult] = field(default_factory=list)
     # Carried inventory state at the end of each period, including items with no requirement that week.
     inventory_end_by_period: dict[dt.date, dict[int, float]] = field(default_factory=dict)
+    # Open receipts left out because they were more than settings.past_due_receipt_max_days overdue:
+    # (item_id, expected_receipt_date, remaining_qty).
+    stale_receipts_excluded: list[tuple[int, dt.date, float]] = field(default_factory=list)
 
     def wc_series(self, work_centre_id: int) -> list[WorkCentrePeriodResult]:
         return sorted(
@@ -138,7 +141,8 @@ PERIOD_DAYS = 7   # the engine steps in weekly periods
 
 
 def _bucket_receipts_by_item_period(
-    purchase_order_lines_df: pd.DataFrame, horizon: list[dt.date]
+    purchase_order_lines_df: pd.DataFrame, horizon: list[dt.date], max_past_due_days: int | None = None,
+    stale: list | None = None,
 ) -> dict[tuple[int, dt.date], float]:
     if purchase_order_lines_df.empty:
         return {}
@@ -160,8 +164,14 @@ def _bucket_receipts_by_item_period(
             else:
                 break
         if period is None:
-            # Past due: an open line whose expected date is already behind us is still expected, so it is
-            # available from the first modelled week (standard MRP treatment of past-due scheduled receipts).
+            # Past due: an open line a little behind its date is still expected, so it is available from the
+            # first modelled week (standard MRP treatment). A line overdue by more than the limit is more
+            # likely stale data than supply: it is excluded and reported, never silently credited.
+            limit = settings.past_due_receipt_max_days if max_past_due_days is None else max_past_due_days
+            if (horizon_sorted[0] - receipt_date).days > limit:
+                if stale is not None:
+                    stale.append((int(row["item_id"]), receipt_date, float(row["remaining_qty"])))
+                continue
             period = horizon_sorted[0]
         if receipt_date >= horizon_sorted[-1] + dt.timedelta(days=PERIOD_DAYS):
             continue  # arrives after the last modelled week: it cannot cover demand inside the horizon
@@ -221,17 +231,26 @@ def run_period_engine(
     workdays_by_wc = work_centres_df.set_index("work_centre_id")["days_per_week"].to_dict()
     base_queue_days = _base_queue_time_days_by_work_centre(routing_operations_df)
     avg_minutes_per_unit = _avg_minutes_per_unit_by_work_centre(routing_operations_df)
-    receipts_by_item_period = _bucket_receipts_by_item_period(purchase_order_lines_df, horizon)
+    stale_receipts: list[tuple[int, dt.date, float]] = []
+    receipts_by_item_period = _bucket_receipts_by_item_period(purchase_order_lines_df, horizon, stale=stale_receipts)
     low_level_codes = compute_low_level_codes(items_df, bom_headers_df, bom_components_df)
     max_llc = max(low_level_codes.values(), default=0)
 
     inventory_state: dict[int, float] = dict(initial_inventory)
+    # The recorded on-hand of an entity-blocked item cannot be trusted, so it is held apart: never usable,
+    # still physically there (it stays in the inventory snapshot). Receipts are separate supply and remain
+    # usable whatever week they arrive in.
+    blocked_stock = {item_id: inventory_state.pop(item_id) for item_id in list(inventory_state)
+                     if blocking_index.is_entity_blocked("item", item_id)}
     for item_id, boost in buffer_boost_by_item.items():
-        inventory_state[item_id] = inventory_state.get(item_id, 0.0) + boost
+        # A buffer decision on a blocked item joins its held-apart stock: until the item's data-quality block
+        # is cleared none of its stock positions count (unchanged rule; receipts are the only usable supply).
+        target = blocked_stock if item_id in blocked_stock or blocking_index.is_entity_blocked("item", item_id) else inventory_state
+        target[item_id] = target.get(item_id, 0.0) + boost
     backlog_state: dict[int, float] = {int(wc): 0.0 for wc in work_centres_df["work_centre_id"]}
     constraint_state: dict[int, ConstraintState] = {int(wc): ConstraintState() for wc in work_centres_df["work_centre_id"]}
 
-    output = PeriodEngineOutput()
+    output = PeriodEngineOutput(stale_receipts_excluded=stale_receipts)
 
     for period in sorted(horizon):
         period_demand = top_level_demand.get(period, {})
@@ -262,8 +281,7 @@ def run_period_engine(
                 item_code = item_code_by_id.get(item_id, "UNKNOWN")
 
                 blocked = blocking_index.is_entity_blocked("item", item_id)
-                stored = inventory_state.get(item_id, 0.0)
-                usable = 0.0 if blocked else stored
+                usable = inventory_state.get(item_id, 0.0)   # blocked on-hand was moved to blocked_stock
                 receipts = receipts_by_item_period.get((item_id, period), 0.0)
                 # Scalar form of netting.net_requirement for one position (same rules; see its tests).
                 usable_inventory, scheduled_receipts, net = net_single_position(gross, usable, receipts)
@@ -271,10 +289,7 @@ def run_period_engine(
 
                 available = usable + receipts
                 consumed = min(available, gross)
-                # Blocked stock cannot be used, but it is still physically there: carry it forward untouched
-                # instead of overwriting it with what is left of this week's receipts.
-                held_back = stored if blocked else 0.0
-                inventory_state[item_id] = held_back + max(0.0, available - consumed)
+                inventory_state[item_id] = max(0.0, available - consumed)
 
                 output.material_results.append(MaterialRequirementPeriodResult(
                     item_id=item_id, item_code=item_code, period_start_date=period,
@@ -372,7 +387,9 @@ def run_period_engine(
                 if r.period_start_date == period and r.work_centre_id == primary:
                     r.constraint_classification = "PRIMARY_CONSTRAINT"
 
-        output.inventory_end_by_period[period] = {item: qty for item, qty in inventory_state.items() if qty > 0}
+        held = {item: inventory_state.get(item, 0.0) + blocked_stock.get(item, 0.0)
+                for item in set(inventory_state) | set(blocked_stock)}
+        output.inventory_end_by_period[period] = {item: qty for item, qty in held.items() if qty > 0}
 
     return output
 

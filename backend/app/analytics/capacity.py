@@ -36,12 +36,17 @@ class RoutingLoad:
 
     def __init__(self, routing_headers_df: pd.DataFrame, routing_operations_df: pd.DataFrame):
         self._latest_by_item = routing_headers_df.set_index("item_id")["routing_id"].to_dict()
+        self._all_by_item: dict[int, list[int]] = {}
+        for item_id, routing_id in zip(routing_headers_df["item_id"], routing_headers_df["routing_id"]):
+            self._all_by_item.setdefault(int(item_id), []).append(int(routing_id))
         self._dated = "effective_from" in routing_headers_df.columns
         self._headers = []
         if self._dated:
+            # A missing effective_to column means no revision has an end date (open-ended).
+            ends = (routing_headers_df["effective_to"].map(_to_date) if "effective_to" in routing_headers_df.columns
+                    else [None] * len(routing_headers_df))
             self._headers = list(zip(routing_headers_df["item_id"], routing_headers_df["routing_id"],
-                                     routing_headers_df["effective_from"].map(_to_date),
-                                     routing_headers_df["effective_to"].map(_to_date)))
+                                     routing_headers_df["effective_from"].map(_to_date), ends))
         self._ops: dict = {}
         for op in routing_operations_df.to_dict("records"):
             self._ops.setdefault(op["routing_id"], []).append(op)
@@ -74,6 +79,11 @@ class RoutingLoad:
                 continue
             routing_id = routing_id_by_item.get(item_id)
             if routing_id is None:
+                if period_start_date is not None and self._dated and item_id in self._all_by_item:
+                    # The item has routings but none is effective this week (a gap between revisions): the load
+                    # is unknown, so its operations are reported as excluded rather than counted as zero.
+                    excluded.extend(int(op["routing_operation_id"]) for rid in self._all_by_item[item_id]
+                                    for op in self._ops.get(rid, ()))
                 continue
             for op in self._ops.get(routing_id, ()):
                 op_id = int(op["routing_operation_id"])

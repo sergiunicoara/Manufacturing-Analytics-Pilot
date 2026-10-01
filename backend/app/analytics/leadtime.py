@@ -54,7 +54,8 @@ class LeadTimeCalculator:
         self._route_candidates: dict[int, list[tuple]] = {}
         for row in routing_headers_df.itertuples(index=False):
             start = _as_date(row.effective_from) if dated else None
-            end = None if not dated or pd.isna(row.effective_to) else _as_date(row.effective_to)
+            end_value = getattr(row, "effective_to", None)   # missing column = open-ended revisions
+            end = None if not dated or end_value is None or pd.isna(end_value) else _as_date(end_value)
             self._route_candidates.setdefault(row.item_id, []).append((row.routing_id, start, end))
         self._dated_routes = dated
 
@@ -90,11 +91,14 @@ class LeadTimeCalculator:
 
     def _route_metrics(self, route_item: int, qty_per_fg: float, period: dt.date,
                        wc_results_by_period: dict) -> tuple[float, float, float] | None:
-        candidates = self._route_candidates.get(route_item, [])
+        all_candidates = self._route_candidates.get(route_item, [])
+        candidates = all_candidates
         if self._dated_routes:
             candidates = [c for c in candidates if c[1] <= period and (c[2] is None or c[2] >= period)]
         if not candidates:
-            return (0.0, 0.0, 0.0)
+            # No routing at all: nothing to process (e.g. a phantom). Routings that exist but none effective
+            # this week (a gap between revisions): the time is unknown, as in the capacity load.
+            return None if all_candidates else (0.0, 0.0, 0.0)
         if len(candidates) > 1:
             return None
         ops = self._route_ops.get(candidates[0][0], [])
