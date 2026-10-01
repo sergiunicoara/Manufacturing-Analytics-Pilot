@@ -73,7 +73,7 @@ flowchart LR
 | Completeness checker returns BLOCK | Load stops; the report goes to the ERP team with the failing checks |
 | Adapter validation error (bad MES line, missing file) | The whole file is rejected with every problem listed (`AdapterError.problems`); nothing is loaded partially |
 | Transient SQL error | Retry 3 times with backoff, then fail the run |
-| BI export incomplete | No sidecar means the file is not published; BI keeps the previous export |
+| BI export incomplete | The sidecar records the CSV's SHA-256. Before the live pair is replaced, the last verified pair is kept as `<name>.previous.csv` / `.previous.meta.json`, so an interruption at any point leaves a complete verified pair (except during the very first export of a name). Readers take `FileBIExportAdapter.latest_valid(name)`, or check `verify(name)` |
 
 ## Local vs. client-dependent
 

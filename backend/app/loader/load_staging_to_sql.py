@@ -60,9 +60,27 @@ def _coerce_value(value, col_type: sa.types.TypeEngine):
     return value
 
 
-def _load_table(engine: sa.engine.Engine, metadata: sa.MetaData, table_name: str, staging_dir: str) -> int:
-    csv_path = os.path.join(staging_dir, f"{table_name}.csv")
-    df = pd.read_csv(csv_path)
+def read_staged_tables(staging_dir: str) -> dict[str, pd.DataFrame]:
+    """Read every file the load needs, before anything is dropped. The completeness contract covers only the
+    tables the analytics need; the loader also needs the others in TABLE_ORDER (warehouses, suppliers,
+    purchase orders, ...), so a missing or unreadable file must stop the load here, not after the schema is gone.
+    The frames read here are the ones loaded, so a file cannot change between the check and the load."""
+    frames, problems = {}, []
+    for table_name in TABLE_ORDER:
+        path = os.path.join(staging_dir, f"{table_name}.csv")
+        if not os.path.isfile(path):
+            problems.append(f"{table_name}.csv is missing")
+            continue
+        try:
+            frames[table_name] = pd.read_csv(path)
+        except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
+            problems.append(f"{table_name}.csv cannot be read: {exc}")
+    if problems:
+        raise SystemExit("Staged data is incomplete; nothing was dropped or loaded:\n  - " + "\n  - ".join(problems))
+    return frames
+
+
+def _load_table(engine: sa.engine.Engine, metadata: sa.MetaData, table_name: str, df: pd.DataFrame) -> int:
     if df.empty:
         return 0
 
@@ -88,12 +106,13 @@ def _load_table(engine: sa.engine.Engine, metadata: sa.MetaData, table_name: str
     return len(records)
 
 
-def completeness_gate(staging_dir: str) -> None:
+def completeness_gate(frames: dict[str, pd.DataFrame]) -> None:
     """Refuse to start the destructive reload when the staged data fails the data-request contract (BLOCK).
     WARN results are printed and allowed. Runs before anything is dropped."""
-    from app.integration.completeness import BLOCK, PASS, load_contract, run_checks, tables_from_csv
+    from app.integration.completeness import BLOCK, PASS, load_contract, run_checks
     contract = load_contract()
-    report = run_checks(tables_from_csv(staging_dir, contract), contract)
+    tables = {spec["table"]: frames[spec["table"]] for spec in contract["datasets"] if spec["table"] in frames}
+    report = run_checks(tables, contract)
     print(f"Completeness check: {report['overall']}  {report['counts']}")
     for r in report["results"]:
         if r["status"] != PASS:
@@ -108,9 +127,12 @@ def load_all(staging_dir: str = "staging", ddl_path: str = "db/ddl/001_schema.sq
     """Destructive bootstrap: the DDL drops and recreates every table, then the versioned migrations
     (result tables, read models, roles, run data version) are re-applied so the schema is current
     before the API starts. Pass migrations_dir=None only to inspect the bare DDL. Staged data is checked against
-    the completeness contract first; a BLOCK aborts before anything is dropped."""
+    the completeness contract first; a BLOCK aborts before anything is dropped. Every file the load needs is
+    read and parsed first, whatever the completeness setting. Still possible after the drop: a value that cannot
+    be converted to its column type, or a constraint violation (restore from a backup, see RESTORE_RUNBOOK.md)."""
+    frames = read_staged_tables(staging_dir)
     if check_completeness:
-        completeness_gate(staging_dir)
+        completeness_gate(frames)
     wait_for_sql_server()
     run_ddl_file(ddl_path)
 
@@ -122,7 +144,7 @@ def load_all(staging_dir: str = "staging", ddl_path: str = "db/ddl/001_schema.sq
 
     counts = {}
     for table_name in TABLE_ORDER:
-        counts[table_name] = _load_table(engine, metadata, table_name, staging_dir)
+        counts[table_name] = _load_table(engine, metadata, table_name, frames[table_name])
         print(f"Loaded {table_name:35s} {counts[table_name]:>7d} rows")
 
     return counts
@@ -133,6 +155,7 @@ if __name__ == "__main__":
     parser.add_argument("--staging-dir", default="staging")
     parser.add_argument("--ddl", default="db/ddl/001_schema.sql")
     parser.add_argument("--migrations", default="db/migrations")
-    parser.add_argument("--skip-completeness", action="store_true", help="load even if the completeness check reports BLOCK")
+    parser.add_argument("--skip-completeness", action="store_true",
+                        help="load even if the completeness check reports BLOCK (missing or unreadable files still stop the load)")
     args = parser.parse_args()
     load_all(args.staging_dir, args.ddl, args.migrations, check_completeness=not args.skip_completeness)

@@ -113,7 +113,7 @@ def test_policy_blocks_when_no_bom_revision_is_current():
         "effective_to": [last_order - dt.timedelta(days=1), None, None]})       # FG-A's only revision expired
     rec = {r.item_id: r for r in pol.recommend_policies(tables, {1: 0.1})}[1]
     assert rec.policy == pol.INSUFFICIENT
-    assert any("No BOM revision is effective" in b for b in rec.blockers)
+    assert any("No BOM revision of FG-A is effective" in b for b in rec.blockers)
 
 
 def test_policy_without_any_bom_is_not_blocked_for_structure():
@@ -141,7 +141,7 @@ def test_each_export_uses_unique_temporary_files(tmp_path, monkeypatch):
     metadata = {key: "v" for key in BI_REQUIRED_METADATA}
     adapter.export("backlog", pd.DataFrame({"a": [1]}), metadata)
     adapter.export("backlog", pd.DataFrame({"a": [2]}), metadata)
-    assert len(set(seen)) == 4 and all(name.endswith(".tmp") for name in seen)
+    assert len(set(seen)) == 6 and all(name.endswith(".tmp") for name in seen)
     assert adapter.verify("backlog")
 
 

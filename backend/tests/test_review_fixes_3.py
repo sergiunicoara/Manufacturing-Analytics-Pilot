@@ -84,7 +84,7 @@ def test_a_crash_between_the_two_renames_is_detected(tmp_path, monkeypatch):
 
     def crash_on_second(src, dst):
         calls.append(dst)
-        if len(calls) == 2:
+        if len(calls) == 4:            # previous csv, previous meta, live csv, then crash before live meta
             raise OSError("power cut")
         real_replace(src, dst)
 
@@ -93,6 +93,7 @@ def test_a_crash_between_the_two_renames_is_detected(tmp_path, monkeypatch):
         adapter.export("backlog", pd.DataFrame({"a": [2]}), metadata)
     monkeypatch.setattr(os, "replace", real_replace)
     assert not adapter.verify("backlog")          # new CSV, old sidecar: reported, never silently trusted
+    assert adapter.latest_valid("backlog") == (tmp_path / "backlog.previous.csv", tmp_path / "backlog.previous.meta.json")
     assert not list(tmp_path.glob("*.tmp"))
 
 

@@ -122,6 +122,31 @@ def children_by_parent(bom_headers: pd.DataFrame, bom_components: pd.DataFrame,
     return {int(p): set(g["component_item_id"].astype(int)) for p, g in comps.groupby("parent_item_id")}
 
 
+def structure_problems(item_id: int, children: dict[int, set[int]], item_type: dict[int, str],
+                       revisions_total: dict[int, int], revisions_current: dict[int, int],
+                       codes: dict[int, str], as_of: dt.date) -> list[str]:
+    """Blockers for the bill of materials under a finished good, checked at every manufactured level (the
+    item itself and each manufactured component reachable through the current structure): an item that has
+    BOM revisions but none effective on `as_of`, or several overlapping ones, makes the component chain and
+    its cumulative time unknown. Purchased components are leaves and are not checked."""
+    problems, seen, stack = [], set(), [item_id]
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        current = revisions_current.get(node, 0)
+        label = codes.get(node, str(node))
+        if revisions_total.get(node, 0) and current == 0:
+            problems.append(f"No BOM revision of {label} is effective on {as_of} (the latest order date), so the "
+                            "component chain and its cumulative time are unknown.")
+        elif current > 1:
+            problems.append(f"{label} has {current} overlapping BOM revisions effective on {as_of}, so its components "
+                            "are ambiguous.")
+        stack.extend(child for child in children.get(node, ()) if item_type.get(child) not in PURCHASED)
+    return problems
+
+
 def reaches_cycle(item_id: int, children: dict[int, set[int]]) -> bool:
     """True when the structure below `item_id` contains a cycle (an item that is, directly or not, its own component)."""
     done: set[int] = set()
@@ -165,8 +190,9 @@ def recommend_policies(tables: dict[str, pd.DataFrame], forecast_wape_by_item: d
     demand = weekly_demand_stats(tables["sales_orders"], tables["sales_order_lines"]).set_index("item_id")
     as_of = current_as_of(tables["sales_orders"])
     children = children_by_parent(tables["bom_headers"], tables["bom_components"], as_of)
-    has_bom = set(tables["bom_headers"]["parent_item_id"].dropna().astype(int))
-    has_current_bom = set(effective_bom_headers(tables["bom_headers"], as_of)["parent_item_id"].dropna().astype(int))
+    revisions_total = tables["bom_headers"]["parent_item_id"].dropna().astype(int).value_counts().to_dict()
+    revisions_current = (effective_bom_headers(tables["bom_headers"], as_of)["parent_item_id"]
+                         .dropna().astype(int).value_counts().to_dict())
     own_days = {int(i): float(r["own_route_days"]) for i, r in production.iterrows()
                 if r["completed_orders"] >= thresholds.min_completed_production_orders}
 
@@ -175,9 +201,7 @@ def recommend_policies(tables: dict[str, pd.DataFrame], forecast_wape_by_item: d
         blockers, reasons = [], []
         if reaches_cycle(item_id, children):
             blockers.append("The bill of materials contains a cycle, so the cumulative time cannot be measured.")
-        if item_id in has_bom and item_id not in has_current_bom:
-            blockers.append(f"No BOM revision is effective on {as_of} (the latest order date), so the component "
-                            "chain and its cumulative time are unknown.")
+        blockers += structure_problems(item_id, children, item_type, revisions_total, revisions_current, codes, as_of)
         tol = tolerance.loc[item_id] if item_id in tolerance.index else None
         if tol is None or tol["order_count"] < thresholds.min_order_count:
             blockers.append(f"Fewer than {thresholds.min_order_count} sales order lines to measure customer tolerance.")

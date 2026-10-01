@@ -148,3 +148,13 @@ Open decision, not changed: a buffer decision on an entity-blocked item stays un
 
 Full run: backend 255 passed (strict, none skipped), UI 67, browser 4 passed and 1 skipped (copilot, opt-in). The five reference backlogs are unchanged: 74.4 / 212.2 / 93.1 / 164.4 / 77.3.
 
+## J. Fifth round (2026-10-01)
+
+| # | Finding | Fix | Verification |
+|---|---|---|---|
+| J1 | The loader preflight did not cover every file the load needs (e.g. `warehouses.csv`), so a missing file failed after the schema was dropped | `read_staged_tables` reads and parses every `TABLE_ORDER` file first and stops on any missing or unreadable one, even with `--skip-completeness`; the frames read are the ones loaded | `test_review_fixes_5.py` (missing and empty files, with and without `--skip-completeness`, nothing touched). Still possible after the drop: a type-conversion or constraint error; documented |
+| J2 | Overlapping BOM revisions, or an expired BOM on a required subassembly, still gave confident policies | Every manufactured level of the current structure is checked; no effective revision or several overlapping ones is a blocker naming the item | Unit tests; live: exactly the three FGs on the injected overlapping revisions move from ASSEMBLE_TO_ORDER to INSUFFICIENT_EVIDENCE (ATO 17 to 14, insufficient 70 to 73) |
+| J3 | A BI export interruption was detectable but the previous valid export was not guaranteed, contrary to INTEGRATION.md | The last verified pair is kept as `<name>.previous.*` before the live pair is replaced; `latest_valid(name)` returns a complete verified pair after an interruption at any point (except the very first export of a name) | Unit test crashing at each of the four renames |
+
+Full run: backend 268 passed (strict, none skipped), UI 67, browser 4 passed and 1 skipped (copilot, opt-in). Engine results unchanged.
+

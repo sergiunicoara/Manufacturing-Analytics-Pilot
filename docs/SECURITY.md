@@ -49,7 +49,7 @@ Clients send `X-API-Key: <key>`. To return to the demo profile, run `docker comp
 | Destination | When | Content |
 |---|---|---|
 | Browser / API client | Any authorised request | Read models and evidence for the requested page |
-| BI files (`FileBIExportAdapter`) | Explicit export | CSV plus a provenance sidecar that records the CSV's SHA-256; `verify(name)` confirms the pair matches |
+| BI files (`FileBIExportAdapter`) | Explicit export | CSV plus a provenance sidecar that records the CSV's SHA-256; the previous verified pair is kept as a fallback; `latest_valid(name)` returns a matching pair |
 | Anthropic API | Demo profile with a key set, or secured profile with `ALLOW_EXTERNAL_LLM=true` and a key | The question plus the minimised deterministic evidence bundle (secured profile). Nothing is sent when evidence is missing |
 
 **EU processing of the LLM call is not assumed.** Setting a region string does not guarantee where a provider processes data. No provider deployment's EU-only processing has been verified in this session, so for client data the secured default (external explanations off) must stay in place. Change that only after checking the provider's current, authoritative documentation and agreeing it with the client.

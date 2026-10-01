@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import uuid
 from pathlib import Path
 
@@ -32,16 +33,35 @@ class CsvERPAdapter:
 class FileBIExportAdapter:
     """Writes a CSV plus a sidecar JSON with provenance, so the BI tool never receives a bare number.
 
-    Two files cannot be replaced in one atomic step, so the pairing is made verifiable instead: the sidecar
-    records the SHA-256 of the exact CSV bytes it describes, and `verify(name)` checks it. Everything that can
-    fail (writing either file, serialising the metadata) happens on temporary files before the live files are
-    touched; a crash between the two final renames leaves a pair that `verify` reports as mismatched."""
+    Two files cannot be replaced in one atomic step, so an export keeps the last verified pair as a fallback:
+      1. the new CSV and sidecar are written to unique temporary files (the sidecar records the CSV's SHA-256);
+      2. if the live pair verifies, it is copied to `<name>.previous.csv` / `<name>.previous.meta.json`
+         (again through temporary files) while the live pair is still intact;
+      3. only then are the live files replaced.
+    At every moment at least one complete, verified pair exists (live, or previous during step 3), except during
+    the very first export of a name, when there is nothing to fall back to. Readers use `latest_valid(name)`."""
 
     def __init__(self, directory: str | Path):
         self.directory = Path(directory)
 
-    def _paths(self, name: str) -> tuple[Path, Path]:
-        return self.directory / f"{name}.csv", self.directory / f"{name}.meta.json"
+    def _paths(self, name: str, previous: bool = False) -> tuple[Path, Path]:
+        stem = f"{name}.previous" if previous else name
+        return self.directory / f"{stem}.csv", self.directory / f"{stem}.meta.json"
+
+    @staticmethod
+    def _pair_is_valid(csv_path: Path, meta_path: Path) -> bool:
+        if not csv_path.exists() or not meta_path.exists():
+            return False
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return False
+        return isinstance(meta, dict) and meta.get("csv_sha256") == hashlib.sha256(csv_path.read_bytes()).hexdigest()
+
+    @staticmethod
+    def _replace_pair(sources: tuple[Path, Path], targets: tuple[Path, Path]) -> None:
+        os.replace(sources[0], targets[0])
+        os.replace(sources[1], targets[1])
 
     def export(self, name: str, frame: pd.DataFrame, metadata: dict) -> str:
         problems = []
@@ -51,33 +71,36 @@ class FileBIExportAdapter:
         if problems:
             raise AdapterError(problems)
         self.directory.mkdir(parents=True, exist_ok=True)
-        path, meta_path = self._paths(name)
+        live, previous = self._paths(name), self._paths(name, previous=True)
         # Unique per export, so two concurrent exports of the same name never share or delete each other's files.
         token = uuid.uuid4().hex
-        temp_csv = path.with_name(f"{path.name}.{token}.tmp")
-        temp_meta = meta_path.with_name(f"{meta_path.name}.{token}.tmp")
+        new_tmp = tuple(path.with_name(f"{path.name}.{token}.tmp") for path in live)
+        old_tmp = tuple(path.with_name(f"{path.name}.{token}.tmp") for path in previous)
         try:
-            frame.to_csv(temp_csv, index=False)
-            digest = hashlib.sha256(temp_csv.read_bytes()).hexdigest()
-            temp_meta.write_text(json.dumps({**metadata, "csv_sha256": digest}, indent=2, default=str),
-                                 encoding="utf-8")
-            os.replace(temp_csv, path)
-            os.replace(temp_meta, meta_path)
+            frame.to_csv(new_tmp[0], index=False)
+            digest = hashlib.sha256(new_tmp[0].read_bytes()).hexdigest()
+            new_tmp[1].write_text(json.dumps({**metadata, "csv_sha256": digest}, indent=2, default=str),
+                                  encoding="utf-8")
+            if self._pair_is_valid(*live):
+                shutil.copyfile(live[0], old_tmp[0])
+                shutil.copyfile(live[1], old_tmp[1])
+                self._replace_pair(old_tmp, previous)       # live is untouched until this pair is complete
+            self._replace_pair(new_tmp, live)               # if interrupted here, `previous` is the valid pair
         finally:
-            for leftover in (temp_csv, temp_meta):
+            for leftover in new_tmp + old_tmp:
                 leftover.unlink(missing_ok=True)
-        return str(path)
+        return str(live[0])
 
     def verify(self, name: str) -> bool:
-        """True only when both files exist and the sidecar describes exactly this CSV."""
-        path, meta_path = self._paths(name)
-        if not path.exists() or not meta_path.exists():
-            return False
-        try:
-            recorded = json.loads(meta_path.read_text(encoding="utf-8")).get("csv_sha256")
-        except json.JSONDecodeError:
-            return False
-        return recorded == hashlib.sha256(path.read_bytes()).hexdigest()
+        """True only when both live files exist and the sidecar describes exactly this CSV."""
+        return self._pair_is_valid(*self._paths(name))
+
+    def latest_valid(self, name: str) -> tuple[Path, Path] | None:
+        """The live pair if it verifies, otherwise the previous verified pair, otherwise None."""
+        for pair in (self._paths(name), self._paths(name, previous=True)):
+            if self._pair_is_valid(*pair):
+                return pair
+        return None
 
 
 class JsonlMESAdapter:
