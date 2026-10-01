@@ -127,6 +127,8 @@ components. Calibration: simulated processing hours are about 0.9 of the period 
 
 ## order-change-impact
 
+Three stock points are named: after laser cutting, before painting, and between welding and painting (parts after welding or grinding; it overlaps with before painting on welded parts). Weekly stock is the average of the daily stock over seven days. Forecast Updates replays the data's weekly forecast snapshots: at the Sunday that starts demand week j, demand for later weeks is scaled by new/old forecast per item and week (an item or week missing from either snapshot is unchanged, because snapshots are sparse), weeks up to j keep their plan, and each update is compared with the plan before it as a forecast change at that moment. Idle hours on the Monday after paid overtime are the part of the first Monday shift at the overtime work centres in which nothing was worked.
+
 Stock points are places where work waits between operations. The named ones are after laser cutting and before painting (colour is
 committed there); every other waiting place, and work in process, appears in the audit at the moment of the change. Everything is
 reconstructed from the operation log of the simulated plan, so what is reported at a stock point (units through, wait, average and peak

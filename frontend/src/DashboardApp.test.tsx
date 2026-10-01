@@ -12,6 +12,7 @@ const NAV_PAGES = [
   ["scenario-lab", "Scenario Lab"], ["data-quality", "Data Quality"], ["recommendation", "Recommendation"],
   ["stage-performance", "Stage Performance"], ["decision-economics", "Decision Economics"], ["planning-policy", "Planning Policy"],
   ["shop-floor-flow", "Shop Floor Flow"], ["order-change-impact", "Order Change Impact"],
+  ["stock-points", "Stock Points"], ["forecast-updates", "Forecast Updates"],
 ] as const;
 
 function allPages() {
@@ -70,11 +71,11 @@ describe("loading and errors", () => {
 });
 
 describe("navigation", () => {
-  it("offers all fourteen pages plus the executive story", async () => {
+  it("offers all sixteen pages plus the executive story", async () => {
     setup();
     render(<DashboardApp />);
     await heading("Plant Overview");
-    expect(within(screen.getByRole("navigation")).getAllByRole("button")).toHaveLength(14);
+    expect(within(screen.getByRole("navigation")).getAllByRole("button")).toHaveLength(16);
     expect(screen.getByRole("button", { name: /Executive Story/ })).toBeInTheDocument();
   });
 
@@ -322,6 +323,42 @@ describe("scenario lab", () => {
     await user.click(screen.getByRole("button", { name: "Run & save" }));
     expect(await screen.findByText(/A valid X-API-Key header is required/)).toBeInTheDocument();
     expect(screen.queryByText(/Saved run/)).not.toBeInTheDocument();
+  });
+});
+
+describe("shop floor flow settings", () => {
+  async function openFlow(routes: Record<string, unknown> = {}) {
+    const ctx = setup(routes);
+    render(<DashboardApp />);
+    await ctx.user.click(navButton(/Shop Floor Flow/));
+    await heading("Shop Floor Flow");
+    return ctx;
+  }
+
+  it("starts from the plant's 40 minute colour change", async () => {
+    await openFlow();
+    expect(screen.getByLabelText("Colour change (minutes)")).toHaveValue(40);
+    expect(screen.getByLabelText("Saturday overtime (hours)")).toHaveValue(8);
+    expect(screen.getByLabelText("Defect probability per unit")).toHaveValue(0.02);
+  });
+
+  it("posts the chosen assumptions and shows the returned page", async () => {
+    const result = page({ title: "Shop Floor Flow", metrics: [entry("Colour changes, today", 55)] });
+    const { fetchMock, user } = await openFlow({ "/api/flow/run": () => result });
+    const minutes = screen.getByLabelText("Colour change (minutes)");
+    await user.clear(minutes);
+    await user.type(minutes, "20");
+    await user.click(screen.getByRole("button", { name: "Run with these" }));
+    expect(await screen.findByRole("button", { name: /Colour changes, today/ })).toHaveTextContent("55");
+    const [, init] = calls(fetchMock, "/api/flow/run")[0];
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toMatchObject({ changeover_minutes: 20, same_colour_setup_minutes: 5, overtime_hours: 8, replications: 10 });
+  });
+
+  it("shows the server's reason when the run is rejected", async () => {
+    const { user } = await openFlow({ "/api/flow/run": () => { throw new HttpError(401, { detail: "A valid X-API-Key header is required" }); } });
+    await user.click(screen.getByRole("button", { name: "Run with these" }));
+    expect(await screen.findByText(/A valid X-API-Key header is required/)).toBeInTheDocument();
   });
 });
 

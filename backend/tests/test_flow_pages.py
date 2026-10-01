@@ -155,3 +155,57 @@ def test_excluded_items_and_demand_are_reported_not_hidden(computed):
     plant = build_plant(tables, FlowParameters(), list(dashboard.HORIZON))
     assert all(reason for _, reason in plant.problems)
     assert plant.excluded_demand >= 0 and isinstance(plant.skipped_operations, dict)
+
+
+# ---- stock points, forecast updates, settings ------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def stock(computed):
+    tables, comparison = computed
+    return flow_pages.stock_points_page(tables, comparison, dashboard.HORIZON)
+
+
+@pytest.fixture(scope="module")
+def updates(computed):
+    tables, comparison = computed
+    return flow_pages.forecast_updates_page(tables, comparison, dashboard.HORIZON)
+
+
+def test_new_pages_are_registered_with_evidence(stock, updates):
+    assert {"stock-points", "forecast-updates"} <= set(dashboard.PAGES)
+    for page in (stock, updates):
+        for entry in every_entry(page):
+            assert entry["evidence"]["formula"].startswith("ANALYTICS_METHODS.md#") and entry["evidence"]["inputs"], entry["label"]
+
+
+def test_stock_points_page_has_three_points_and_weekly_history(stock):
+    names = [m["label"] for m in stock["metrics"]]
+    assert names == ["Average stock · After laser cutting", "Average stock · Before painting", "Average stock · Between welding and painting"]
+    assert len(stock["series"]) == 3 * 8 and stock["series"][0]["label"].endswith("week 1")
+    assert any(r["label"].startswith("Day 17 audit") for r in stock["rows"])
+
+
+def test_forecast_replay_uses_the_data_snapshots(computed, updates):
+    tables, comparison = computed
+    plant = flow_pages._state_for(tables, comparison, dashboard.HORIZON)["plant"]
+    dates, ratios = flow_pages.revision_ratios(tables, plant, FlowParameters(), dashboard.HORIZON)
+    assert len(ratios) == len(dates) - 1 and ratios
+    assert all(r > 0 for step in ratios for r in step.values())                       # a gap in a sparse snapshot is not a zero
+    assert updates["metrics"][0]["value"] == len(ratios)
+    assert all(row["label"].startswith("Update") for row in updates["rows"][:1])
+
+
+def test_flow_run_applies_chosen_assumptions_and_is_bounded(computed, monkeypatch):
+    from pydantic import ValidationError
+    from app.api import FlowRunRequest, flow_run
+    monkeypatch.setattr(dashboard, "context", lambda: computed)
+    page = flow_run(FlowRunRequest(changeover_minutes=0, replications=2))
+    assert page["settings"]["changeover_minutes"] == 0 and page["settings"]["custom"] is True
+    today = next(m for m in page["metrics"] if m["label"] == "Colour changes saved by grouping colours")
+    assert today["value"] >= 0
+    assert any("0 minutes" in a for a in page["assumptions"])
+    for bad in ({"defect_rate": 0.9}, {"overtime_hours": 0}, {"replications": 99}, {"overtime_premium": 5}):
+        with pytest.raises(ValidationError):
+            FlowRunRequest(**bad)
+    from app.api import router
+    route = next(r for r in router.routes if getattr(r, "path", "") == "/api/flow/run")
+    assert any("require_operator" in str(d.call) for d in route.dependant.dependencies)

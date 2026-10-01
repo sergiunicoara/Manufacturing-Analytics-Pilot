@@ -13,6 +13,7 @@ const PAGES = [
   ["recommendation", "Recommendation", "✦"], ["stage-performance", "Stage Performance", "⏱"],
   ["decision-economics", "Decision Economics", "€"], ["planning-policy", "Planning Policy", "⚙"],
   ["shop-floor-flow", "Shop Floor Flow", "⛭"], ["order-change-impact", "Order Change Impact", "↯"],
+  ["stock-points", "Stock Points", "▤"], ["forecast-updates", "Forecast Updates", "⟳"],
 ] as const;
 type Evidence = { value: unknown; provenance: string; formula: string; inputs: Array<{name: string; value: unknown; provenance: string; source_record_id: string | null}>; calculation_trace: string[]; assumptions: string[]; units?: string; time_scope?: string; coverage?: Record<string, unknown>; exclusions?: string[]; data_origin?: string };
 type Entry = { label: string; value: unknown; evidence: Evidence; [key: string]: unknown };
@@ -90,6 +91,21 @@ function ChangeControls({ onResult }: {onResult: (page: Page)=>void}) {
   return <div className="controls"><h3>What if the client changes the forecast?</h3><div className="control-grid"><label>Change on day<input type="number" min="-30" max="120" step="1" value={day} onChange={e=>setDay(Number(e.target.value))}/></label><label>From demand week<input type="number" min="0" max="11" step="1" value={fromWeek} onChange={e=>setFromWeek(Number(e.target.value))}/></label><label>Forecast factor (0 cancels)<input type="number" min="0" max="3" step="0.1" value={factor} onChange={e=>setFactor(Number(e.target.value))}/></label><label>Product family<select value={family} onChange={e=>setFamily(e.target.value)}><option value="">All families</option>{FAMILIES.map(f=><option key={f}>{f}</option>)}</select></label></div><button onClick={run} disabled={busy}>{busy ? "Calculating…" : "Show impact"}</button>{error && <p className="error-text">{error}</p>}</div>;
 }
 
+function FlowControls({ onResult }: {onResult: (page: Page)=>void}) {
+  const [v, setV] = useState({changeover_minutes:40, same_colour_setup_minutes:5, defect_rate:0.02, overtime_hours:8, overtime_premium:1.5, max_lot_qty:60, demand_multiplier:1});
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const field = (key: keyof typeof v, label: string, min: number, max: number, step: number) =>
+    <label>{label}<input type="number" min={min} max={max} step={step} value={v[key]} onChange={e=>setV({...v,[key]:Number(e.target.value)})}/></label>;
+  async function run() {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`${API}/api/flow/run`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...v,replications:10})});
+      const payload = await response.json(); if (!response.ok) throw new Error(payload.detail ?? "Shop floor run failed"); onResult(payload);
+    } catch (e) {setError(String(e));} finally {setBusy(false);}
+  }
+  return <div className="controls"><h3>Try your own assumptions</h3><div className="control-grid">{field("changeover_minutes","Colour change (minutes)",0,480,5)}{field("same_colour_setup_minutes","Same-colour reload (minutes)",0,240,1)}{field("defect_rate","Defect probability per unit",0,0.5,0.01)}{field("overtime_hours","Saturday overtime (hours)",1,24,1)}{field("overtime_premium","Overtime pay multiple",1,3,0.1)}{field("max_lot_qty","Largest lot (units)",5,500,5)}{field("demand_multiplier","Demand multiplier (CAB-100)",0.5,3,0.1)}</div><button onClick={run} disabled={busy}>{busy ? "Simulating…" : "Run with these"}</button>{error && <p className="error-text">{error}</p>}</div>;
+}
+
 function Copilot({ onEvidence }: {onEvidence: (e: Evidence)=>void}) {
   const [question, setQuestion] = useState("Why does capacity matter after the demand shock?");
   const [answer, setAnswer] = useState(""); const [payload, setPayload] = useState<unknown>(null); const [busy,setBusy]=useState(false);
@@ -122,7 +138,7 @@ export function DashboardApp() {
   const choose = (next:string) => {setEvidence(null);setSlug(next);};
   // Stable identity: the charts depend on this handler, so a new function per render would redraw them whenever the drawer opens.
   const openEvidence=useCallback((next:Evidence)=>setEvidence(next),[]);
-  const bars=["capacity","scenario-lab","demand-forecast","stage-performance","decision-economics","shop-floor-flow","order-change-impact"].includes(slug);
+  const bars=["capacity","scenario-lab","demand-forecast","stage-performance","decision-economics","shop-floor-flow","order-change-impact","stock-points","forecast-updates"].includes(slug);
   return <div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">M</span><div><strong>Manufacturing<br/>Analytics</strong><small>Decision pilot</small></div></div><div className="nav-caption">WORKSPACE</div><nav>{PAGES.map(([id,name,icon])=><button key={id} onClick={()=>choose(id)} className={slug===id?"selected":""}><span>{icon}</span>{name}</button>)}</nav><div className="nav-caption">PRESENT</div><button className={`story-link ${slug==="story"?"selected":""}`} onClick={()=>choose("story")}>▶ Executive Story</button><div className="side-foot">Synthetic data · 12-week story<br/>Evidence attached to each result</div></aside>
     <main className="dashboard-main"><div className="topbar"><span>OPERATIONS INTELLIGENCE / {slug==="story"?"EXECUTIVE STORY":page?.title?.toUpperCase()??"LOADING"}</span><span className="live-pill">● Synthetic pilot</span></div>
       <header className="dashboard-header"><div className="eyebrow">DECISION SUPPORT · WEEKLY PLANNING</div><h1>{slug==="story"?"Executive Story":page?.title??"Loading analytics"}</h1><p>{slug==="story"?"Follow the demand shock, physical constraint, and intervention response.":"Select any result to inspect its method, inputs, and assumptions."}</p></header>
@@ -136,8 +152,10 @@ export function DashboardApp() {
         {slug==="decision-economics"&&<div className="story-note">Headline = period expense (inventory carrying cost + added paid hours). Buffer capital is a balance tied up at standard cost and is shown separately, never added to the expense. WIP carrying cost is unavailable because engine WIP mixes items. No ROI or profit figure is computed. Rates are configurable assumptions; the data is synthetic.</div>}
         {slug==="planning-policy"&&<div className="story-note">Policy (where to hold stock) is separate from buffer sizing (how much, see Recommendation). Heuristic for planner review; not a DDMRP implementation and no ERP write-back. Download the review package: <a href={`${API}/api/parameters/package.json`} download>JSON</a> · <a href={`${API}/api/parameters/package.csv`} download>CSV</a> · <a href={`${API}/api/parameters/schema.json`} target="_blank" rel="noreferrer">schema</a>. Every native M3 field is unmapped until verified.</div>}
         {slug==="stage-performance"&&<><div className="story-note"><strong>Recorded</strong> = actual finish − actual start from production order operations (synthetic timestamps; resolution stated in each evidence drawer). It is elapsed calendar time, not productive processing time. <strong>Modelled</strong> = routing-standard processing hours for the same operations. Unfinished, invalid and DQ-excluded operations are counted separately, never as zero.</div><StageRecords/></>}
-        {slug==="shop-floor-flow"&&<div className="story-note">Compares shop-floor policies with today's practice on the same plant, demand and seed: colour grouping on the coating lines (a colour change takes 40 minutes), finding defects at each component instead of at final inspection, pulling forward the one component an order is waiting for, and paying Saturday overtime only when its work will be used. Colour, defect rates and the overtime premium are assumptions, not data; each evidence drawer lists them and what was excluded. Scrap rows are averages of seeded runs.</div>}
+        {slug==="shop-floor-flow"&&<><FlowControls onResult={setPage}/><div className="story-note">Compares shop-floor policies with today's practice on the same plant, demand and seed: colour grouping on the coating lines (a colour change takes 40 minutes), finding defects at each component instead of at final inspection, pulling forward the one component an order is waiting for, and paying Saturday overtime only when its work will be used. Colour, defect rates and the overtime premium are assumptions, not data; each evidence drawer lists them and what was excluded. Scrap rows are averages of seeded runs.</div></>}
         {slug==="order-change-impact"&&<><ChangeControls onResult={setPage}/><div className="story-note">Work in progress at each stock point (after laser cutting, before painting: colour is committed there) and the stages between. When the forecast changes, the unwanted share of what already exists is split into what other open orders can still use and what is stranded; work after painting is reusable only in the same colour. The changed plan re-simulates the plant from the start with the new forecast. Values are standard cost, synthetic data.</div></>}
+        {slug==="stock-points"&&<div className="story-note">Average units in stock after laser cutting, before painting (colour is committed there) and between welding and painting, week by week, plus an audit of every stage on one day. History is what the simulated plan did, not a record; click any bar or row for its evidence.</div>}
+        {slug==="forecast-updates"&&<div className="story-note">Replays the weekly forecast snapshots in the data: at each Sunday the plan for later weeks is scaled to the new forecast, and work already started is compared with what is still wanted. Stranded value is zero when the update arrives before work for the changed weeks has started.</div>}
         {slug==="recommendation"&&<div className="story-note">Recommendations are analytical ranges upstream of candidate or primary constraints. Confirm replenishment time and practical placement with the plant team.</div>}
         <Copilot onEvidence={openEvidence}/></>}
       <footer>Fictional manufacturing data. Capacity arrangements and service risk are analytical estimates.</footer>

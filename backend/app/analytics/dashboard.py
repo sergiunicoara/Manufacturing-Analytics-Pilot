@@ -657,9 +657,19 @@ def stage_records(work_centre_id: int | None = None, record_class: str | None = 
             "records": json_value(page.astype(object).where(page.notna(), None).to_dict("records"))}
 
 
-def shop_floor_flow():
+def shop_floor_flow(overrides=None):
     tables, runs = context()
-    return flow_pages.shop_floor_flow(tables, runs, HORIZON)
+    return flow_pages.shop_floor_flow(tables, runs, HORIZON, overrides)
+
+
+def stock_points():
+    tables, runs = context()
+    return flow_pages.stock_points_page(tables, runs, HORIZON)
+
+
+def forecast_updates():
+    tables, runs = context()
+    return flow_pages.forecast_updates_page(tables, runs, HORIZON)
 
 
 def order_change_impact(change=None):
@@ -673,4 +683,5 @@ PAGES = {"plant-overview": plant_overview, "demand-forecast": demand_forecast,
          "scenario-lab": scenarios, "data-quality": data_quality,
          "recommendation": recommendations, "stage-performance": stage_performance,
          "decision-economics": decision_economics, "planning-policy": planning_policy,
-         "shop-floor-flow": shop_floor_flow, "order-change-impact": order_change_impact}
+         "shop-floor-flow": shop_floor_flow, "order-change-impact": order_change_impact,
+         "stock-points": stock_points, "forecast-updates": forecast_updates}

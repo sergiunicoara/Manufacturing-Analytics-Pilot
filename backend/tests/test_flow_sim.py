@@ -330,3 +330,12 @@ def test_every_job_finishes_for_any_combination_of_policies():
                             overtime_work_centres=(2, 3))
             result = run(busy_chain(), prm, policy, seed=5)
             assert result.metrics["unfinished_jobs"] == 0, (mode, overtime)
+
+
+def test_monday_idle_counts_the_paid_worker_who_finds_nothing_to_do():
+    p = plant([wc(1, "LASER_CUTTING")], {FG: [op(1, run=6)]})                         # 1 h of work in the first week
+    policy = Policy(overtime="unconditional", overtime_work_centres=(1,), overtime_hours=8.0)
+    m = run(p, policy=policy).metrics
+    assert m["monday_idle_h"] == pytest.approx(7.0 + 8.0)                             # weeks 1 and 2: 7 h and 8 h idle
+    assert m["monday_idle_after_overtime_h"] == pytest.approx(15.0)                   # both follow a paid Saturday
+    assert run(p, policy=Policy(overtime_work_centres=(1,))).metrics["monday_idle_after_overtime_h"] == 0.0

@@ -161,6 +161,26 @@ def flow_change_impact(request: ForecastChangeRequest):
         raise HTTPException(status_code=503, detail=f"Change impact unavailable: {exc}") from exc
 
 
+class FlowRunRequest(BaseModel):
+    changeover_minutes: float | None = Field(default=None, ge=0, le=480)
+    same_colour_setup_minutes: float | None = Field(default=None, ge=0, le=240)
+    defect_rate: float | None = Field(default=None, ge=0, le=0.5)
+    overtime_hours: float | None = Field(default=None, ge=1, le=24)
+    overtime_premium: float | None = Field(default=None, ge=1, le=3)
+    max_lot_qty: float | None = Field(default=None, ge=5, le=500)
+    demand_multiplier: float | None = Field(default=None, ge=0.5, le=3)
+    replications: int | None = Field(default=None, ge=1, le=20)
+
+
+@router.post("/api/flow/run", dependencies=[Depends(security.require_operator)])
+def flow_run(request: FlowRunRequest):
+    """The Shop Floor Flow page for chosen assumptions (not cached, not persisted)."""
+    try:
+        return dashboard.shop_floor_flow({k: v for k, v in request.model_dump().items() if v is not None})
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Shop floor run unavailable: {exc}") from exc
+
+
 @router.get("/story")
 def story():
     overview = _page("plant-overview")

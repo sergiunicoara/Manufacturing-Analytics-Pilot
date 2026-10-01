@@ -25,6 +25,7 @@ class WipPoint:
 DEFAULT_WIP_POINTS = (
     WipPoint("After laser cutting", after=("LASER_CUTTING",)),
     WipPoint("Before painting", before=COATING_PROCESSES),
+    WipPoint("Between welding and painting", after=("WELDING", "GRINDING")),
 )
 
 
@@ -135,6 +136,16 @@ def point_history(result: FlowResult, point: WipPoint, passes: list | None = Non
     }
 
 
+def weekly_stock(history: dict, weeks: int) -> list:
+    """Average units and value in stock per week of the point's history (week 0 is the first demand week)."""
+    out = []
+    for week in range(weeks):
+        days = [s for s in history["series"] if week * 7 <= s["day"] < (week + 1) * 7]
+        out.append({"week": week, "units": sum(s["units"] for s in days) / 7.0,        # days after the stock empties count as zero
+                    "value": sum(s["value"] for s in days) / 7.0})
+    return out
+
+
 def stage_table(result: FlowResult, at_h: float, passes: list | None = None) -> list:
     """The audit at one moment: for every stage, what is waiting there (parts that finished an operation and wait for
     the next one, or for the lot that uses them) and what is being worked on."""
@@ -205,19 +216,24 @@ def _need_key(plant: FlowPlant, job, committed: bool):
 
 
 def change_impact(plant: FlowPlant, params: FlowParameters, policy: Policy, change: ForecastChange,
-                  points: tuple = DEFAULT_WIP_POINTS, seed: int | None = None) -> dict:
+                  points: tuple = DEFAULT_WIP_POINTS, seed: int | None = None, runs: tuple | None = None,
+                  shares: dict | None = None) -> dict:
     """What a forecast change does, point by point. Run A is the plan as it stood; run B is the same plant with the
     changed demand. At the moment of the change (`change.day`) the work already done on the lots that are reduced or
     cancelled is read from run A: the unwanted share of it is split into what other open work still needs (reusable,
     unless it already carries a colour that other work does not share) and what is stranded. B shows the new load."""
-    a = FlowSimulation(plant, params, policy, seed).run()
-    new_plant = changed_plant(plant, change)
-    b = FlowSimulation(new_plant, params, policy, seed).run()
+    if runs is None:
+        a = FlowSimulation(plant, params, policy, seed).run()
+        b = FlowSimulation(changed_plant(plant, change), params, policy, seed).run()
+    else:
+        a, b = runs
     at_h = params.lead_in_weeks * HOURS_PER_WEEK + change.day * 24.0
     unwanted_share = max(0.0, 1.0 - change.factor)
-    affected_roots = {lot["jid"] for lot in a.fg_lots
-                      if _in_weeks(change, _lot_week(lot, params)) and _matches(plant, change, lot["item_id"])}
-    affected_roots = {a.jobs[j].root for j in affected_roots}
+    if shares is None:
+        affected_roots = {lot["jid"] for lot in a.fg_lots
+                          if _in_weeks(change, _lot_week(lot, params)) and _matches(plant, change, lot["item_id"])}
+        shares = {a.jobs[j].root: unwanted_share for j in affected_roots}
+    affected_roots = {root for root, share in shares.items() if share > 0}
 
     passes_a = waiting_passes(a)
     # future need in B: units of work not yet started at the change moment, per item (and colour once committed)
@@ -235,8 +251,9 @@ def change_impact(plant: FlowPlant, params: FlowParameters, policy: Policy, chan
     stage: dict = defaultdict(lambda: {"units": 0.0, "value": 0.0, "reusable_units": 0.0, "reusable_value": 0.0})
     for e in holding:
         key_c = _need_key(plant, e["job"], e["colour_committed"])
-        unwanted_units = e["qty"] * unwanted_share
-        unwanted_value = e["value"] * unwanted_share
+        share = shares[e["job"].root]
+        unwanted_units = e["qty"] * share
+        unwanted_value = e["value"] * share
         room = max(0.0, future.get(key_c, 0.0) - consumed_need[key_c])
         reuse_units = min(unwanted_units, room)
         consumed_need[key_c] += reuse_units
@@ -256,7 +273,7 @@ def change_impact(plant: FlowPlant, params: FlowParameters, policy: Policy, chan
             for (index, start, end, work_h, wc_id, _, _) in job.op_log:
                 if start <= at_h < end:
                     partial = work_h * ((at_h - start) / max(end - start, 1e-9)) * plant.work_centres[wc_id].cost_per_hour
-                    in_process_value += (_value(a, job, index) + partial) * unwanted_share
+                    in_process_value += (_value(a, job, index) + partial) * shares[job.root]
     sunk_total += in_process_value
 
     named = []
@@ -294,11 +311,48 @@ def change_impact(plant: FlowPlant, params: FlowParameters, policy: Policy, chan
     }
 
 
+def forecast_revisions(plant: FlowPlant, params: FlowParameters, policy: Policy, ratios_by_revision: list,
+                       seed: int | None = None) -> list:
+    """Replay weekly forecast updates. `ratios_by_revision[j-1]` maps (week, item) to new/old forecast for the update
+    received on the Sunday that starts demand week j. Work for weeks up to j is kept as planned; later weeks are
+    re-planned. Each update is compared with the plan before it, as a forecast change at that moment."""
+    plans = [plant]
+    runs = [FlowSimulation(plant, params, policy, seed).run()]
+    out = []
+    for j, ratios in enumerate(ratios_by_revision, start=1):
+        before = plans[-1]
+        demand, shares = [], {}
+        for week, item, qty in before.demand:
+            ratio = ratios.get((week, item), 1.0) if week > j else 1.0
+            demand.append((week, item, qty * ratio))
+        after = dataclasses.replace(before, demand=[row for row in demand if row[2] > 1e-9])
+        run_after = FlowSimulation(after, params, policy, seed).run()
+        old = {(w, i): q for w, i, q in before.demand}
+        new = {(w, i): q for w, i, q in after.demand}
+        for lot in runs[-1].fg_lots:
+            key = (_lot_week(lot, params), lot["item_id"])
+            if old.get(key, 0.0) > 0:
+                shares[runs[-1].jobs[lot["jid"]].root] = max(0.0, 1.0 - new.get(key, 0.0) / old[key])
+        change = ForecastChange(day=7.0 * j, from_week=j + 1, factor=1.0)
+        impact = change_impact(before, params, policy, change, seed=seed, runs=(runs[-1], run_after),
+                               shares=shares or {runs[-1].fg_lots[0]["jid"] if runs[-1].fg_lots else 0: 0.0})
+        up = sum(max(0.0, new.get(k, 0.0) - old.get(k, 0.0)) for k in set(old) | set(new))
+        down = sum(max(0.0, old.get(k, 0.0) - new.get(k, 0.0)) for k in set(old) | set(new))
+        impact["revision"] = j
+        impact["units_added"] = up
+        impact["units_removed"] = down
+        out.append(impact)
+        plans.append(after)
+        runs.append(run_after)
+    return out
+
+
 # ---- policy comparison ------------------------------------------------------------------------------------------
 METRIC_KEYS = ("late_lots", "on_time_pct", "mean_lateness_days", "mean_lead_time_days", "makespan_days", "changeovers",
                "changeover_hours", "coating_setup_hours", "component_wait_days", "scrapped_units", "scrap_value",
                "remake_jobs", "processing_hours", "processing_cost", "overtime_paid_h", "overtime_busy_h",
-               "overtime_idle_h", "overtime_cost", "overtime_stranded_h", "purchased_shortage_lines", "lots")
+               "overtime_idle_h", "overtime_cost", "overtime_stranded_h", "monday_idle_h", "monday_idle_after_overtime_h",
+               "purchased_shortage_lines", "lots")
 
 
 def _mean_std(runs: list) -> tuple[dict, dict]:
@@ -324,14 +378,15 @@ def policy_suite(plant: FlowPlant, params: FlowParameters, replications: int = 2
         out.append({"group": group, "key": key, "label": label, "policy": dataclasses.asdict(policy), "reps": replications,
                     "metrics": mean, "std": std})
 
-    single("baseline", "today", "Today: earliest due date, colour ignored", Policy(name="today"))
+    watch = dict(overtime_work_centres=overtime_work_centres, overtime_hours=overtime_hours)
+    single("baseline", "today", "Today: earliest due date, colour ignored", Policy(name="today", **watch))
     for window in windows:
-        single("colour", f"colour_{window:g}", f"Group colours, window {window:g} days", Policy(name=f"colour {window:g}", colour_window_days=window))
-    single("priority", "kit_priority", "Prioritise the last missing component", Policy(name="kit priority", kit_priority=True))
+        single("colour", f"colour_{window:g}", f"Group colours, window {window:g} days", Policy(name=f"colour {window:g}", colour_window_days=window, **watch))
+    single("priority", "kit_priority", "Prioritise the last missing component", Policy(name="kit priority", kit_priority=True, **watch))
     for mode, label in (("final", "Defects found at final inspection: whole product scrapped (today)"),
                         ("replace", "Defects found at final inspection: replace only the failed component"),
                         ("component", "Inspect each component: remake only the bad one")):
-        repeated("scrap", f"scrap_{mode}", label, Policy(name=f"scrap {mode}", defects=True, scrap_mode=mode))
+        repeated("scrap", f"scrap_{mode}", label, Policy(name=f"scrap {mode}", defects=True, scrap_mode=mode, **watch))
     if overtime_work_centres:
         single("overtime", "overtime_unconditional", "Saturday overtime, always paid",
                Policy(name="overtime", overtime="unconditional", overtime_work_centres=overtime_work_centres, overtime_hours=overtime_hours))
@@ -341,5 +396,5 @@ def policy_suite(plant: FlowPlant, params: FlowParameters, replications: int = 2
                       scrap_mode="component", overtime="gated" if overtime_work_centres else "none",
                       overtime_work_centres=overtime_work_centres, overtime_hours=overtime_hours)
     repeated("combined", "combined", "All together", combined)
-    repeated("combined", "today_with_defects", "Today, with defects", Policy(name="today with defects", defects=True, scrap_mode="final"))
+    repeated("combined", "today_with_defects", "Today, with defects", Policy(name="today with defects", defects=True, scrap_mode="final", **watch))
     return out

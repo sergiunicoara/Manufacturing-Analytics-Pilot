@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.analytics.flow.analysis import (DEFAULT_WIP_POINTS, ForecastChange, WipPoint, change_impact, point_history,
-                                         policy_suite, stage_table, waiting_passes)
+from app.analytics.flow.analysis import (DEFAULT_WIP_POINTS, ForecastChange, WipPoint, change_impact, forecast_revisions,
+                                         point_history, policy_suite, stage_table, waiting_passes, weekly_stock)
 from app.analytics.flow.model import COATING_PROCESSES, Policy
 from app.analytics.flow.sim import FlowSimulation
 from tests.flow_helpers import FG, STEEL, SUB, op, params, plant, wc
@@ -139,3 +139,35 @@ def test_the_policy_suite_is_reproducible():
     a = policy_suite(chain(), params(max_lot_qty=10.0, defect_rate_default=0.1), replications=3, windows=(5.0,))
     b = policy_suite(chain(), params(max_lot_qty=10.0, defect_rate_default=0.1), replications=3, windows=(5.0,))
     assert [e["metrics"] for e in a] == [e["metrics"] for e in b]
+
+
+# ---- third stock point, weekly history, weekly forecast updates -------------------------------------------------
+def test_the_named_stock_points_are_laser_painting_and_welding_to_painting():
+    assert [p.name for p in DEFAULT_WIP_POINTS] == ["After laser cutting", "Before painting", "Between welding and painting"]
+
+
+def test_weekly_stock_averages_the_daily_history():
+    result = simulate(chain())
+    history = point_history(result, DEFAULT_WIP_POINTS[0])
+    weeks = weekly_stock(history, 3)
+    assert len(weeks) == 3 and weeks[0]["units"] > 0
+    assert weeks[0]["units"] == pytest.approx(sum(s["units"] for s in history["series"] if s["day"] < 7) / 7.0)
+
+
+def test_a_forecast_update_changes_only_later_weeks_and_strands_nothing_not_yet_started():
+    p = chain(demand=[(0, FG, 10.0), (1, FG, 10.0), (3, FG, 10.0)])
+    out = forecast_revisions(p, params(max_lot_qty=10.0, horizon_weeks=4), Policy(), [{(3, FG): 0.5, (1, FG): 0.1}])
+    assert len(out) == 1 and out[0]["units_removed"] == pytest.approx(5.0)            # week 1 is frozen at the update on week 1
+    assert out[0]["stranded_value"] == 0.0 and out[0]["metrics_after"]["lots"] == 3   # week 3 work had not started
+
+
+def test_a_forecast_update_that_removes_started_work_strands_it():
+    """Parts for week-2 lots are released two weeks ahead (offset 14 days), so they are already made, and waiting for
+    their assembly, when the Sunday update cancels week 2."""
+    p = chain(demand=[(2, FG, 10.0)])
+    out = forecast_revisions(p, params(max_lot_qty=10.0, horizon_weeks=4, lead_in_weeks=1, level_offset_days=14.0), Policy(),
+                             [{(2, FG): 0.0}])
+    assert out[0]["units_removed"] == pytest.approx(10.0)
+    painted_and_cut = 1.0 * 60.0 + 10 * 10.0 + 10.0833 * 60.0                        # laser hour + steel + painting hours
+    assert out[0]["sunk_value"] == pytest.approx(painted_and_cut, rel=1e-3) and out[0]["stranded_value"] == pytest.approx(out[0]["sunk_value"])
+    assert out[0]["metrics_after"]["lots"] == 0

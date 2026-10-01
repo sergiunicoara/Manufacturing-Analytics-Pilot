@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const PAGES = ["Plant Overview", "Demand & Forecast", "Production Flow", "BOM Explorer", "Capacity", "WIP & Lead Time",
   "Scenario Lab", "Data Quality", "Recommendation", "Stage Performance", "Decision Economics", "Planning Policy",
-  "Shop Floor Flow", "Order Change Impact"];
+  "Shop Floor Flow", "Order Change Impact", "Stock Points", "Forecast Updates"];
 
 test.beforeEach(async ({ page }) => {
   const problems: string[] = [];

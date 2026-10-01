@@ -552,6 +552,19 @@ class FlowSimulation:
             busy = min(window["busy_h"], paid)
             overtime.append({"wc": wc, "week": week, "paid_h": paid, "busy_h": busy, "idle_h": paid - busy,
                              "cost": paid * plant.work_centres[wc].cost_per_hour * params.overtime_premium})
+        monday_idle, monday_after_ot = 0.0, 0.0
+        for wc_id in self.policy.overtime_work_centres:
+            if wc_id not in plant.work_centres:
+                continue
+            width = plant.work_centres[wc_id].hours_per_day
+            spans = [(entry[1], entry[2]) for job in self.jobs.values() for entry in job.op_log if entry[4] == wc_id]
+            for week in range(params.lead_in_weeks, params.lead_in_weeks + params.horizon_weeks):
+                start = week * HOURS_PER_WEEK + params.shift_start_hour
+                busy = sum(max(0.0, min(end, start + width) - max(begin, start)) for begin, end in spans)
+                idle = max(0.0, width - busy)
+                monday_idle += idle
+                if (wc_id, week - 1) in self.ot_windows:
+                    monday_after_ot += idle
         coating = [w for w, c in plant.work_centres.items() if c.process in COATING_PROCESSES]
         changeovers = sum(self.wc_changeovers[w] for w in coating)
         count = max(len(finished), 1)
@@ -571,7 +584,7 @@ class FlowSimulation:
             "processing_cost": sum(self.wc_busy[w] * plant.work_centres[w].cost_per_hour for w in plant.work_centres),
             "overtime_paid_h": sum(o["paid_h"] for o in overtime), "overtime_busy_h": sum(o["busy_h"] for o in overtime),
             "overtime_idle_h": sum(o["idle_h"] for o in overtime), "overtime_cost": sum(o["cost"] for o in overtime),
-            "overtime_stranded_h": stranded,
+            "overtime_stranded_h": stranded, "monday_idle_h": monday_idle, "monday_idle_after_overtime_h": monday_after_ot,
             "purchased_shortage_lines": self.shortage_lines,
             "unfinished_jobs": sum(1 for j in self.jobs.values() if j.done_h is None), "jobs": len(self.jobs),
         }

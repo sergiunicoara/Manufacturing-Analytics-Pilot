@@ -5,12 +5,13 @@ tables and the period engine's reference cases; everything here is derived from 
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
 from collections import defaultdict
 from threading import Lock
 
 from app.analytics.evidence import evidence, json_value, source
-from app.analytics.flow.analysis import (DEFAULT_WIP_POINTS, METRIC_KEYS, ForecastChange, change_impact, point_history,
-                                         policy_suite)
+from app.analytics.flow.analysis import (DEFAULT_WIP_POINTS, METRIC_KEYS, ForecastChange, change_impact, forecast_revisions,
+                                         point_history, policy_suite, stage_table, waiting_passes, weekly_stock)
 from app.analytics.flow.model import FlowParameters, FlowPlant, Policy
 from app.analytics.flow.plant import build_plant
 from app.analytics.flow.sim import FlowSimulation
@@ -23,6 +24,8 @@ LABELS = {"late_lots": "late lots", "mean_lead_time_days": "lead time (days)", "
           "scrapped_units": "units scrapped", "scrap_value": f"value scrapped ({CURRENCY})",
           "overtime_paid_h": "overtime paid (h)", "overtime_idle_h": "overtime idle (h)",
           "overtime_stranded_h": "overtime output left waiting (h)", "overtime_cost": f"overtime cost ({CURRENCY})",
+          "monday_idle_h": "idle hours on Mondays at the overtime work centres",
+          "monday_idle_after_overtime_h": "idle hours on the Monday after paid overtime",
           "remake_jobs": "remake jobs", "processing_hours": "processing hours"}
 
 _lock = Lock()
@@ -115,7 +118,8 @@ def _summary(entry: dict) -> str:
         parts.append(f"component wait {m['component_wait_days']:.0f} d")
     if entry["group"] == "overtime" or m["overtime_paid_h"]:
         parts.append(f"overtime {m['overtime_paid_h']:.0f} h paid, {m['overtime_idle_h']:.0f} h idle, "
-                     f"{m['overtime_stranded_h']:.0f} h of output left waiting, {m['overtime_cost']:,.0f} {CURRENCY}")
+                     f"{m['overtime_stranded_h']:.0f} h of output left waiting, {m['overtime_cost']:,.0f} {CURRENCY}; "
+                     f"{m['monday_idle_after_overtime_h']:.0f} h idle on the Monday after")
     return " · ".join(parts)
 
 
@@ -123,8 +127,27 @@ PRIMARY = {"baseline": "late_lots", "colour": "changeovers", "priority": "compon
            "overtime": "overtime_idle_h", "combined": "late_lots"}
 
 
-def shop_floor_flow(tables, comparison, horizon) -> dict:
+OVERRIDE_FIELDS = {"changeover_minutes": "changeover_minutes", "same_colour_setup_minutes": "same_colour_setup_minutes",
+                   "defect_rate": "defect_rate_default", "overtime_premium": "overtime_premium",
+                   "max_lot_qty": "max_lot_qty", "demand_multiplier": "demand_multiplier"}
+
+
+def _custom_state(state: dict, tables, horizon, overrides: dict) -> dict:
+    """The same pages for chosen assumptions: nothing here is cached or persisted."""
+    fields = {OVERRIDE_FIELDS[k]: v for k, v in overrides.items() if k in OVERRIDE_FIELDS and v is not None}
+    params = dataclasses.replace(state["params"], **fields)
+    rebuild = any(k in fields for k in ("demand_multiplier", "max_lot_qty"))
+    plant = build_plant(tables, params, list(horizon)) if rebuild else state["plant"]
+    hours = float(overrides.get("overtime_hours") or 8.0)
+    reps = int(overrides.get("replications") or REPLICATIONS)
+    suite = policy_suite(plant, params, reps, overtime_work_centres=state["overtime_wcs"], overtime_hours=hours)
+    return {**state, "params": params, "plant": plant, "suite": suite, "overtime_hours": hours, "custom": True}
+
+
+def shop_floor_flow(tables, comparison, horizon, overrides: dict | None = None) -> dict:
     state = _state_for(tables, comparison, horizon)
+    if overrides:
+        state = _custom_state(state, tables, horizon, overrides)
     params, plant, suite = state["params"], state["plant"], state["suite"]
     by_key = {e["key"]: e for e in suite}
     shortages = int(by_key["today"]["metrics"]["purchased_shortage_lines"])
@@ -139,6 +162,7 @@ def shop_floor_flow(tables, comparison, horizon) -> dict:
     best = min(colour, key=lambda e: e["metrics"]["changeovers"]) if colour else today
     final, replace, comp = by_key["scrap_final"], by_key["scrap_replace"], by_key["scrap_component"]
     unconditional = by_key.get("overtime_unconditional")
+    custom = state.get("custom", False)
     metrics = [
         _metric("Finished-good lots late, today", round(today["metrics"]["late_lots"]), "ANALYTICS_METHODS.md#shop-floor-flow",
                 _entry_inputs(today), notes, **common),
@@ -170,6 +194,12 @@ def shop_floor_flow(tables, comparison, horizon) -> dict:
                                _entry_inputs(unconditional) + [source("share of paid overtime that was idle",
                                                                         round(idle / paid, 3) if paid else None, "flow", "DERIVED")],
                                notes, **common))
+        monday = unconditional["metrics"]["monday_idle_after_overtime_h"]
+        metrics.append(_metric("Idle hours on the Monday after paid overtime", round(monday), "ANALYTICS_METHODS.md#shop-floor-flow",
+                               _entry_inputs(unconditional) + [source("idle hours on all Mondays at these work centres, today",
+                                                                        round(today["metrics"]["monday_idle_h"], 1), "flow:today", "DERIVED")],
+                               notes, ["A Monday window is idle when the work centre had no work in it: the paid worker finds nothing to do."],
+                               **common))
     rows, series = [], []
     for entry in suite:
         primary = PRIMARY[entry["group"]]
@@ -186,6 +216,10 @@ def shop_floor_flow(tables, comparison, horizon) -> dict:
     return {"title": "Shop Floor Flow", "metrics": metrics, "series": series,
             "series_label": "Mean finished-good lead time by shop-floor policy (days)", "unit": "days",
             "rows": rows, "total_rows": len(rows), "assumptions": notes, "overtime_work_centres": list(state["overtime_wcs"]),
+            "settings": {"changeover_minutes": params.changeover_minutes, "same_colour_setup_minutes": params.same_colour_setup_minutes,
+                         "defect_rate": params.defect_rate_default, "overtime_hours": state.get("overtime_hours", 8.0),
+                         "overtime_premium": params.overtime_premium, "max_lot_qty": params.max_lot_qty,
+                         "demand_multiplier": params.demand_multiplier, "custom": custom},
             "data_origin": "SYNTHETIC"}
 
 
@@ -289,3 +323,155 @@ def change_page(tables, comparison, horizon, change: ForecastChange | None = Non
             "series_label": f"Stranded value by stock point, {scope} {what} {weeks} (day {c['day']:g}; {CURRENCY})",
             "unit": CURRENCY, "rows": rows, "total_rows": len(rows), "assumptions": notes, "change": c,
             "stock_points": [dataclasses.asdict(p) for p in DEFAULT_WIP_POINTS], "data_origin": "SYNTHETIC"}
+
+
+def _weeks_label(params: FlowParameters, week: int) -> str:
+    return f"week {week + 1}"
+
+
+def stock_points_page(tables, comparison, horizon) -> dict:
+    """Work in progress at each named stock point over the demand weeks, and the audit of every stage on one day."""
+    state = _state_for(tables, comparison, horizon)
+    params, plant, baseline = state["params"], state["plant"], state["baseline"]
+    notes = [a.replace("{shortages}", str(int(baseline.metrics["purchased_shortage_lines"]))) for a in assumptions(params, plant)] + [
+        "A stock point is where work waits between two operations. 'Between welding and painting' is parts after welding or "
+        "grinding; 'Before painting' is any work waiting for a coating line, so the two overlap on welded parts. History is "
+        "reconstructed from the operation log of the simulated plan (an empty shop two weeks before the first demand week)."]
+    passes = waiting_passes(baseline)
+    common = dict(units="units", time_scope=f"{params.horizon_weeks} demand weeks", data_origin="SYNTHETIC",
+                  coverage={"lots": int(baseline.metrics["lots"]), "excluded_items": len(plant.problems)})
+    metrics, series, rows = [], [], []
+    for point in DEFAULT_WIP_POINTS:
+        history = point_history(baseline, point, passes)
+        inputs = [source("units that passed through", round(history["units_through"], 1), "flow:A", "DERIVED"),
+                  source("value that passed through", round(history["value_through"], 2), "flow:A", "DERIVED"),
+                  source("mean wait (days)", round(history["mean_wait_days"], 2), "flow:A", "DERIVED"),
+                  source("90th percentile wait (days)", round(history["p90_wait_days"], 2), "flow:A", "DERIVED"),
+                  source("longest wait (days)", round(history["max_wait_days"], 2), "flow:A", "DERIVED"),
+                  source("peak stock (units)", round(history["peak_units"], 1), "flow:A", "DERIVED"),
+                  source("average stock (units)", round(history["average_units"], 1), "flow:A", "DERIVED"),
+                  source("average value in stock", round(history["average_value"], 2), "flow:A", "DERIVED")]
+        metrics.append(_metric(f"Average stock · {point.name}", round(history["average_units"], 1),
+                               "ANALYTICS_METHODS.md#order-change-impact", inputs, notes, **common))
+        rows.append({"label": point.name, "value": round(history["mean_wait_days"], 2),
+                     "reason": (f"Headline: mean wait (days) · {history['units_through']:.0f} units passed · longest wait "
+                                f"{history['max_wait_days']:.1f} d · peak {history['peak_units']:.0f} units · average value "
+                                f"{history['average_value']:,.0f} {CURRENCY}"),
+                     "evidence": evidence(round(history["mean_wait_days"], 2), "ANALYTICS_METHODS.md#order-change-impact", inputs,
+                                          ["Mean wait of the lots, weighted by quantity."], notes, **{**common, "units": "days"})})
+        for week in weekly_stock(history, params.horizon_weeks):
+            ev = evidence(round(week["units"], 1), "ANALYTICS_METHODS.md#order-change-impact",
+                          [source("average units in stock that week", round(week["units"], 1), "flow:A", "DERIVED"),
+                           source("average value in stock that week", round(week["value"], 2), "flow:A", "DERIVED"), inputs[5]],
+                          [f"{point.name}, {_weeks_label(params, week['week'])}: average of the daily stock."], notes,
+                          provenance="DERIVED", **common)
+            series.append({"label": f"{point.name} · {_weeks_label(params, week['week'])}", "value": round(week["units"], 1), "evidence": ev})
+    day = 17
+    at_h = params.lead_in_weeks * 168.0 + day * 24.0
+    for audit in stage_table(baseline, at_h, passes):
+        inputs = [source("lots", audit["jobs"], "flow:audit", "DERIVED"), source("units", round(audit["units"], 1), "flow:audit", "DERIVED"),
+                  source("value built in", round(audit["value"], 2), "flow:audit", "DERIVED"),
+                  source("mean age (days)", round(audit["mean_age_days"], 2), "flow:audit", "DERIVED")]
+        rows.append({"label": f"Day {day} audit · {audit['stage']}", "value": round(audit["value"], 2),
+                     "reason": f"Headline: value built in ({CURRENCY}) · {audit['jobs']} lots · {audit['units']:.0f} units · mean age {audit['mean_age_days']:.1f} d",
+                     "evidence": evidence(round(audit["value"], 2), "ANALYTICS_METHODS.md#order-change-impact", inputs,
+                                          [f"Every stage on day {day} of the demand weeks."], notes, provenance="DERIVED",
+                                          **{**common, "units": CURRENCY})})
+    return {"title": "Stock Points", "metrics": metrics, "series": series,
+            "series_label": "Average units in stock at each stock point, by week", "unit": "units", "rows": rows,
+            "total_rows": len(rows), "assumptions": notes, "stock_points": [dataclasses.asdict(p) for p in DEFAULT_WIP_POINTS],
+            "data_origin": "SYNTHETIC"}
+
+
+def revision_ratios(tables, plant: FlowPlant, params: FlowParameters, horizon) -> tuple[list, list]:
+    """For each weekly forecast snapshot from the first demand week on, the ratio new/old forecast per (week, item) against
+    the previous snapshot. Returns (snapshot dates, ratios). A snapshot lists only some items and weeks, so an item or week missing from
+    either snapshot is left unchanged, not read as zero."""
+    weeks = list(horizon)[: params.horizon_weeks]
+    index = {w: i for i, w in enumerate(weeks)}
+    versions = tables["forecast_versions"].copy()
+    versions["day"] = versions["snapshot_date"].map(lambda v: v.date() if hasattr(v, "date") else v)
+    versions = versions.loc[(versions["day"] >= weeks[0]) & (versions["day"] <= weeks[-1])].sort_values("day")
+    forecasts = tables["customer_forecasts"]
+    items = {item for _, item, _ in plant.demand}
+    snapshots = []
+    for version_id in versions["forecast_version_id"]:
+        rows = forecasts.loc[forecasts["forecast_version_id"] == version_id]
+        qty: dict = defaultdict(float)
+        for week, item, q in zip(rows["delivery_period_start"], rows["item_id"], rows["qty"]):
+            day = week.date() if hasattr(week, "date") else week
+            if day in index and int(item) in items:
+                qty[(index[day], int(item))] += float(q)
+        snapshots.append(qty)
+    ratios = []
+    for before, after in zip(snapshots, snapshots[1:]):
+        ratios.append({key: after[key] / old for key, old in before.items() if old > 0 and after.get(key, 0.0) > 0})
+    return [d for d in versions["day"]], ratios
+
+
+def forecast_updates_page(tables, comparison, horizon) -> dict:
+    state = _state_for(tables, comparison, horizon)
+    params, plant = state["params"], state["plant"]
+    if state.get("revisions") is None:
+        dates, ratios = revision_ratios(tables, plant, params, horizon)
+        state["revisions"] = (dates, forecast_revisions(plant, params, Policy(), ratios))
+    dates, revisions = state["revisions"]
+    notes = [a.replace("{shortages}", "0") for a in assumptions(params, plant)] + [
+        "Replays the weekly forecast snapshots in the data. At the Sunday that starts demand week j the plan for weeks after j is "
+        "scaled by new/old forecast per item and week (an item or week missing from either snapshot is left unchanged: snapshots are sparse, so a gap is not a zero forecast); work for earlier "
+        "weeks keeps its plan. Each update is compared with the plan before it as a forecast change at that moment: the unwanted share "
+        "of work that exists is split into reusable and stranded as on Order Change Impact."]
+    common = dict(units=CURRENCY, time_scope=f"snapshots {dates[0]} to {dates[-1]}" if dates else "no snapshots",
+                  data_origin="SYNTHETIC", coverage={"updates": len(revisions)})
+    rows, series = [], []
+    total_stranded = sum(r["stranded_value"] for r in revisions)
+    for r in revisions:
+        sunday = dates[r["revision"]] - dt.timedelta(days=1) if r["revision"] < len(dates) else None
+        label = f"Update received Sunday {sunday}" if sunday else f"Update {r['revision']}"
+        before, after = r["metrics_before"], r["metrics_after"]
+        inputs = [source("units added to the plan", round(r["units_added"], 1), "flow:revision", "DERIVED"),
+                  source("units removed from the plan", round(r["units_removed"], 1), "flow:revision", "DERIVED"),
+                  source("work already done on removed demand", round(r["sunk_value"], 2), "flow:revision", "DERIVED"),
+                  source("reusable", round(r["reusable_value"], 2), "flow:revision", "DERIVED"),
+                  source("stranded", round(r["stranded_value"], 2), "flow:revision", "DERIVED"),
+                  source("mean lead time before / after (days)", f"{before['mean_lead_time_days']:.2f} / {after['mean_lead_time_days']:.2f}", "flow", "DERIVED"),
+                  source("late lots before / after", f"{before['late_lots']:.0f} / {after['late_lots']:.0f}", "flow", "DERIVED"),
+                  source("processing hours before / after", f"{before['processing_hours']:.0f} / {after['processing_hours']:.0f}", "flow", "DERIVED")]
+        ev = evidence(round(r["stranded_value"], 2), "ANALYTICS_METHODS.md#order-change-impact", inputs,
+                      [f"{label}: stranded value of the work that existed when the update arrived."], notes, provenance="DERIVED", **common)
+        series.append({"label": f"Sunday {sunday}" if sunday else f"Update {r['revision']}", "value": round(r["stranded_value"], 2), "evidence": ev})
+        rows.append({"label": label, "value": round(r["stranded_value"], 2),
+                     "reason": (f"Headline: stranded value ({CURRENCY}) · +{r['units_added']:.0f} / -{r['units_removed']:.0f} units · lead time "
+                                f"{before['mean_lead_time_days']:.1f} → {after['mean_lead_time_days']:.1f} d · late lots {before['late_lots']:.0f} → "
+                                f"{after['late_lots']:.0f} · hours {after['processing_hours'] - before['processing_hours']:+.0f}"),
+                     "evidence": ev})
+        for point in r["points"]:
+            pin = [source("stranded value", round(point["stranded_value"], 2), "flow:revision", "DERIVED"),
+                   source("reusable value", round(point["reusable_value"], 2), "flow:revision", "DERIVED"),
+                   source("unwanted units in stock", round(point["units_at_change"], 1), "flow:revision", "DERIVED"),
+                   source("average stock before / after (units)", f"{point['average_units_before']:.1f} / {point['average_units_after']:.1f}", "flow", "DERIVED")]
+            rows.append({"label": f"{label} · {point['name']}", "value": round(point["stranded_value"], 2),
+                         "reason": f"{point['units_at_change']:.0f} unwanted units · reusable {point['reusable_value']:,.0f} · average stock "
+                                   f"{point['average_units_before']:.0f} → {point['average_units_after']:.0f} units",
+                         "evidence": evidence(round(point["stranded_value"], 2), "ANALYTICS_METHODS.md#order-change-impact", pin,
+                                              [f"{point['name']} at the update."], notes, provenance="DERIVED", **common)})
+    first_lead = revisions[0]["metrics_before"]["mean_lead_time_days"] if revisions else 0.0
+    last_lead = revisions[-1]["metrics_after"]["mean_lead_time_days"] if revisions else 0.0
+    base_inputs = [source("updates replayed", len(revisions), "forecast_versions", "DERIVED"),
+                   source("stranded across the updates", round(total_stranded, 2), "flow:revisions", "DERIVED"),
+                   source("units added", round(sum(r["units_added"] for r in revisions), 1), "flow:revisions", "DERIVED"),
+                   source("units removed", round(sum(r["units_removed"] for r in revisions), 1), "flow:revisions", "DERIVED")]
+    metrics = [
+        _metric("Weekly forecast updates replayed", len(revisions), "ANALYTICS_METHODS.md#order-change-impact", base_inputs, notes, **common),
+        _metric(f"Work stranded by the updates ({CURRENCY})", round(total_stranded), "ANALYTICS_METHODS.md#order-change-impact", base_inputs, notes, **common),
+        _metric("Units removed from the plan", round(sum(r["units_removed"] for r in revisions)), "ANALYTICS_METHODS.md#order-change-impact", base_inputs, notes, **{**common, "units": "units"}),
+        _metric("Units added to the plan", round(sum(r["units_added"] for r in revisions)), "ANALYTICS_METHODS.md#order-change-impact", base_inputs, notes, **{**common, "units": "units"}),
+        _metric("Mean lead time, first plan to last plan (days)", round(last_lead - first_lead, 2), "ANALYTICS_METHODS.md#order-change-impact",
+                [source("first plan (days)", round(first_lead, 2), "flow", "DERIVED"), source("last plan (days)", round(last_lead, 2), "flow", "DERIVED")],
+                notes, **{**common, "units": "days"}),
+    ]
+    if not series:
+        series = [{"label": "No update", "value": 0, "evidence": evidence(0, "ANALYTICS_METHODS.md#order-change-impact", base_inputs, None, notes)}]
+    return {"title": "Forecast Updates", "metrics": metrics, "series": series,
+            "series_label": f"Stranded value caused by each Sunday forecast update ({CURRENCY})", "unit": CURRENCY, "rows": rows,
+            "total_rows": len(rows), "assumptions": notes, "data_origin": "SYNTHETIC"}

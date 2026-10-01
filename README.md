@@ -28,7 +28,7 @@ The five 12-week reference cases are computed once per API process, in the backg
 - `backend/app/security.py`: profile validation and API-key authorization (demo vs. secured).
 - `backend/app/integration`, `backend/app/integrations`: data-request completeness checker; simulated ERP / BI / MES adapters.
 - `backend/app/db`: migration runner, restore tooling, login setup.
-- `frontend/src/DashboardApp.tsx`: fourteen pages, Plotly charts, and Evidence Drawer.
+- `frontend/src/DashboardApp.tsx`: sixteen pages, Plotly charts, and Evidence Drawer.
 - `db/ddl/001_schema.sql`: base schema (destructive bootstrap). `db/migrations/`: rerunnable, versioned additions.
 - `docs/`: [requirements matrix](docs/REQUIREMENTS_COMPLETION_MATRIX.md), [data request](docs/DATA_REQUEST.md), [M3 mapping](docs/M3_MAPPING.md), [integration](docs/INTEGRATION.md), [restore runbook](docs/RESTORE_RUNBOOK.md), [security](docs/SECURITY.md), [architecture page](docs/architecture.html).
 
