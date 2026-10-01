@@ -28,6 +28,7 @@ from app.dq import summary as dq_summary
 from app.dq.engine import findings_to_dataframe, run_all
 from app.synthetic.run_generator import TABLE_ORDER as SOURCE_TABLES
 from app.synthetic.timeline import REFERENCE_DATE
+from app.analytics import flow_pages
 
 HORIZON = tuple(REFERENCE_DATE + dt.timedelta(weeks=w) for w in range(12))
 CASES = ("BASELINE", "DEMAND_SHOCK_ONLY", "BUFFER_ONLY", "CAPACITY_ONLY", "COMBINED")
@@ -656,9 +657,20 @@ def stage_records(work_centre_id: int | None = None, record_class: str | None = 
             "records": json_value(page.astype(object).where(page.notna(), None).to_dict("records"))}
 
 
+def shop_floor_flow():
+    tables, runs = context()
+    return flow_pages.shop_floor_flow(tables, runs, HORIZON)
+
+
+def order_change_impact(change=None):
+    tables, runs = context()
+    return flow_pages.change_page(tables, runs, HORIZON, change)
+
+
 PAGES = {"plant-overview": plant_overview, "demand-forecast": demand_forecast,
          "production-flow": production_flow, "bom-explorer": bom_explorer,
          "capacity": capacity, "wip-lead-time": wip_lead_time,
          "scenario-lab": scenarios, "data-quality": data_quality,
          "recommendation": recommendations, "stage-performance": stage_performance,
-         "decision-economics": decision_economics, "planning-policy": planning_policy}
+         "decision-economics": decision_economics, "planning-policy": planning_policy,
+         "shop-floor-flow": shop_floor_flow, "order-change-impact": order_change_impact}

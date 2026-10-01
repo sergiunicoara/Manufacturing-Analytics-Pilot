@@ -35,13 +35,15 @@ def test_blocked_item_receipt_is_usable_whether_or_not_it_lands_in_a_demand_week
     assert output.inventory_end_by_period[weeks(3)[1]][2] == pytest.approx(520.0)   # 500 held apart + 20 left
 
 
-def test_blocked_on_hand_and_blocked_buffer_are_never_usable():
+def test_blocked_on_hand_is_never_usable_but_a_buffer_decision_is():
     plant = mini_plant(2, steel_initial_inventory=500.0)
     plant["blocking_index"] = BLOCK_STEEL
     output = run_period_engine(top_level_demand={weeks(2)[0]: {1: 80.0}}, buffer_boost_by_item={2: 300.0}, **plant)
     week0 = steel(output)[weeks(2)[0]]
-    assert week0.usable_inventory == 0 and week0.net_requirement == pytest.approx(80.0)
-    assert output.inventory_end_by_period[weeks(2)[0]][2] == pytest.approx(800.0)
+    assert week0.usable_inventory == 300.0 and week0.net_requirement == 0   # the buffer is usable and covers the demand
+    assert output.inventory_end_by_period[weeks(2)[0]][2] == pytest.approx(720.0)   # 500 held apart + 220 buffer left
+    without = run_period_engine(top_level_demand={weeks(2)[0]: {1: 80.0}}, **plant)
+    assert steel(without)[weeks(2)[0]].usable_inventory == 0                    # recorded on-hand alone stays unusable
 
 
 # ---- 2: long-overdue receipts are excluded and reported ------------------------------------------------------

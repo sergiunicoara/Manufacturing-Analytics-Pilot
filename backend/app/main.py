@@ -18,11 +18,13 @@ from app import security, warmup
 from app.api import router
 from app.config import settings
 from app.analytics.dashboard import context
+from app.analytics import dashboard
 from app.analytics.evidence import evidence, source
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    warmup.start({"reference_cases": lambda: context(), "executive_story": lambda: executive_story()})
+    warmup.start({"reference_cases": lambda: context(), "executive_story": lambda: executive_story(),
+                  "shop_floor_flow": lambda: dashboard.shop_floor_flow()})
     yield
 
 

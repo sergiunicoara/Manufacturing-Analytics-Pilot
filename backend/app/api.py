@@ -139,6 +139,28 @@ def run_scenario(request: ScenarioRequest):
         raise HTTPException(status_code=503, detail=f"Scenario run unavailable: {exc}") from exc
 
 
+class ForecastChangeRequest(BaseModel):
+    day: float = Field(default=14.0, ge=-30, le=120)
+    from_week: int = Field(default=2, ge=0, le=11)
+    to_week: int | None = Field(default=None, ge=0, le=11)
+    factor: float = Field(default=0.0, ge=0.0, le=3.0)
+    families: list[str] = Field(default_factory=list, max_length=10)
+
+
+@router.post("/api/flow/change-impact", dependencies=[Depends(security.require_operator)])
+def flow_change_impact(request: ForecastChangeRequest):
+    """Re-run the shop-floor simulation for a changed forecast and return the Order Change Impact page for it."""
+    from app.analytics.flow.analysis import ForecastChange
+    if request.to_week is not None and request.to_week < request.from_week:
+        raise HTTPException(status_code=422, detail="to_week must not be before from_week")
+    try:
+        change = ForecastChange(day=request.day, from_week=request.from_week, to_week=request.to_week,
+                                factor=request.factor, families=tuple(request.families))
+        return dashboard.order_change_impact(change)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Change impact unavailable: {exc}") from exc
+
+
 @router.get("/story")
 def story():
     overview = _page("plant-overview")

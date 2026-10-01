@@ -11,6 +11,7 @@ const NAV_PAGES = [
   ["bom-explorer", "BOM Explorer"], ["capacity", "Capacity"], ["wip-lead-time", "WIP & Lead Time"],
   ["scenario-lab", "Scenario Lab"], ["data-quality", "Data Quality"], ["recommendation", "Recommendation"],
   ["stage-performance", "Stage Performance"], ["decision-economics", "Decision Economics"], ["planning-policy", "Planning Policy"],
+  ["shop-floor-flow", "Shop Floor Flow"], ["order-change-impact", "Order Change Impact"],
 ] as const;
 
 function allPages() {
@@ -69,11 +70,11 @@ describe("loading and errors", () => {
 });
 
 describe("navigation", () => {
-  it("offers all twelve pages plus the executive story", async () => {
+  it("offers all fourteen pages plus the executive story", async () => {
     setup();
     render(<DashboardApp />);
     await heading("Plant Overview");
-    expect(within(screen.getByRole("navigation")).getAllByRole("button")).toHaveLength(12);
+    expect(within(screen.getByRole("navigation")).getAllByRole("button")).toHaveLength(14);
     expect(screen.getByRole("button", { name: /Executive Story/ })).toBeInTheDocument();
   });
 
@@ -321,6 +322,53 @@ describe("scenario lab", () => {
     await user.click(screen.getByRole("button", { name: "Run & save" }));
     expect(await screen.findByText(/A valid X-API-Key header is required/)).toBeInTheDocument();
     expect(screen.queryByText(/Saved run/)).not.toBeInTheDocument();
+  });
+});
+
+describe("order change impact", () => {
+  async function openImpact(routes: Record<string, unknown> = {}) {
+    const ctx = setup(routes);
+    render(<DashboardApp />);
+    await ctx.user.click(navButton(/Order Change Impact/));
+    await heading("Order Change Impact");
+    return ctx;
+  }
+
+  it("starts from cancelling CAB-100 from week 2 on day 17", async () => {
+    await openImpact();
+    expect(screen.getByLabelText("Change on day")).toHaveValue(17);
+    expect(screen.getByLabelText("From demand week")).toHaveValue(2);
+    expect(screen.getByLabelText("Forecast factor (0 cancels)")).toHaveValue(0);
+    expect(screen.getByLabelText("Product family")).toHaveValue("CAB-100");
+  });
+
+  it("posts the chosen change and replaces the page with the returned impact", async () => {
+    const result = page({ title: "Order Change Impact", metrics: [entry("Stranded, no other use (EUR)", 4321)] });
+    const { fetchMock, user } = await openImpact({ "/api/flow/change-impact": () => result });
+    const factor = screen.getByLabelText("Forecast factor (0 cancels)");
+    await user.clear(factor);
+    await user.type(factor, "0.5");
+    await user.selectOptions(screen.getByLabelText("Product family"), "");
+    await user.click(screen.getByRole("button", { name: "Show impact" }));
+    expect(await screen.findByRole("button", { name: /Stranded, no other use/ })).toHaveTextContent("4,321");
+    const [, init] = calls(fetchMock, "/api/flow/change-impact")[0];
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ day: 17, from_week: 2, factor: 0.5, families: [] });
+  });
+
+  it("shows the server's reason when the change is rejected", async () => {
+    const { user } = await openImpact({ "/api/flow/change-impact": () => { throw new HttpError(422, { detail: "to_week must not be before from_week" }); } });
+    await user.click(screen.getByRole("button", { name: "Show impact" }));
+    expect(await screen.findByText(/to_week must not be before from_week/)).toBeInTheDocument();
+  });
+
+  it("disables the button while the impact is calculated", async () => {
+    const pending = deferred<unknown>();
+    const { user } = await openImpact({ "/api/flow/change-impact": () => pending.promise });
+    await user.click(screen.getByRole("button", { name: "Show impact" }));
+    expect(screen.getByRole("button", { name: "Calculating…" })).toBeDisabled();
+    await act(async () => { pending.resolve(page({ title: "Order Change Impact" })); });
+    expect(screen.getByRole("button", { name: "Show impact" })).toBeEnabled();
   });
 });
 

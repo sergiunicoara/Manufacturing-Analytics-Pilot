@@ -144,7 +144,7 @@ Full run: backend 242 passed (strict, none skipped), UI 66, browser 5. The five 
 | I9 | Routing data without `effective_to` crashed the engine | Missing end-date column means open-ended | Unit test |
 | I10 | `security_setup` duplicated the connection URL builder | `Settings.odbc_url(user, password, database)` used by both | Unit test |
 
-Open decision, not changed: a buffer decision on an entity-blocked item stays unusable, as before. Counting it would move BUFFER_ONLY from 93.1 to 70.0 and COMBINED from 77.3 to 60.1 backlog hours.
+Decision (2026-10-01): a buffer decision on an entity-blocked item now counts as usable stock (see section K0 below); the recorded on-hand of a blocked item stays unusable.
 
 Full run: backend 255 passed (strict, none skipped), UI 67, browser 4 passed and 1 skipped (copilot, opt-in). The five reference backlogs are unchanged: 74.4 / 212.2 / 93.1 / 164.4 / 77.3.
 
@@ -157,4 +157,27 @@ Full run: backend 255 passed (strict, none skipped), UI 67, browser 4 passed and
 | J3 | A BI export interruption was detectable but the previous valid export was not guaranteed, contrary to INTEGRATION.md | The last verified pair is kept as `<name>.previous.*` before the live pair is replaced; `latest_valid(name)` returns a complete verified pair after an interruption at any point (except the very first export of a name) | Unit test crashing at each of the four renames |
 
 Full run: backend 268 passed (strict, none skipped), UI 67, browser 4 passed and 1 skipped (copilot, opt-in). Engine results unchanged.
+
+## K0. Blocked-item buffers (2026-10-01)
+
+| # | Change | Verification |
+|---|---|---|
+| K0 | A planner's buffer decision is new stock, not a recorded balance, so it is usable even on an entity-blocked item; the item's recorded on-hand stays held apart | `test_review_fixes_4.py::test_blocked_on_hand_is_never_usable_but_a_buffer_decision_is`. Reference cases: BASELINE, DEMAND_SHOCK_ONLY and CAPACITY_ONLY identical; BUFFER_ONLY 93.1 to 70.0 and COMBINED 77.3 to 60.1 backlog hours (exact snapshot comparison). Week-12 CAB-100 lead time: buffer only 19.52 to 14.70 d, combined 15.39 to 12.29 d |
+
+## K. Shop-floor flow simulator (2026-10-01)
+
+Requests from the plant: a 40-minute colour change that could be avoided by delivering pieces in batches of one colour; a scrapped subcomponent only found at final inspection, scrapping the whole product and its good components; a shop order blocked by one missing component with no way to prioritise it; weekend overtime paid for work whose follow-on components were not delivered; and work in progress at each stage with the effect of a changed or cancelled forecast. Built as a separate discrete-event simulation (`backend/app/analytics/flow/`); the period engine and its five reference cases are untouched (exact snapshot comparison).
+
+| # | Request | Implementation | Verification |
+|---|---|---|---|
+| K1 | Batch colours to avoid changeovers | Coating work centres charge 40 min for a colour change and a small reload otherwise; policy keeps the colour while a same-colour job is due within W days | `test_flow_sim.py` (changeover count and hours exact, grouping gives one change per extra colour, a zero window does not cross due dates). Live: 112 to 92 changes; no lateness change because the coating lines are lightly loaded here |
+| K2 | Detect scrap earlier, replace only the bad component | Seeded per-unit defects; modes: final inspection scraps the product, final inspection replaces the failed component (rework and re-inspection), inspection of each component remakes only bad units | Forced-defect tests with hand-computed unit values (38 per finished good, 16 per component), reproducibility by seed. Live (mean of 10 seeded runs): value scrapped 339,018 / 38,555 / 12,611 EUR |
+| K3 | Prioritise the one missing component | A component whose parent lacks at most one component, with the parent's other parts available and release passed, is served first | Two-product test where plain earliest-due-date serves the blocked order's part last; no effect on a plant without competition. Live: small gain in component wait, no change in late lots |
+| K4 | Overtime only when it will be used | Saturday windows, always paid or gated on queued work whose consumer is missing nothing else by Monday; paid, busy, idle and left-waiting hours; an operation running at Friday close can use the new window | Tests for idle paid hours, refusal when nothing is waiting, productive overtime finishing earlier, refusal when the consumer lacks another part. Live: 182 of 240 paid hours idle when always paid |
+| K5 | Work in progress at each stage and the effect of a forecast change | Stock points (after laser cutting, before painting) and a stage audit from the operation log; change impact splits the unwanted share of existing work into reusable (other open demand, same colour after painting) and stranded; lead time, late lots and hours per process before and after | Hand-computed values and waiting times, cancel / halve / raise, reuse by other demand, colour commitment, change before any work. A third stock point can be added by naming its process |
+| K6 | Pages and route | Shop Floor Flow, Order Change Impact (14 pages), `POST /api/flow/change-impact` (operator role), every number with evidence and the assumptions | `test_flow_pages.py`, `test_cp4_cp5.py` (every page has evidence), 6 UI tests, browser smoke over all 14 pages |
+
+Calibration: simulated processing hours are about 0.9 of the period engine's required hours for the same demand and weeks (regression test 0.6-1.15). Not claimed: that any colour mix, defect rate, rework time or overtime premium is the plant's (all assumptions, listed in each drawer); that these policies would behave the same in another plant.
+
+Full run: backend 328 passed (strict, none skipped), UI 73, browser 4 passed and 1 skipped (copilot, opt-in). The five reference backlogs are 74.4 / 212.2 / 70.0 / 164.4 / 60.1 since K0.
 

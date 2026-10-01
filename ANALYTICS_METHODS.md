@@ -96,3 +96,46 @@ The thresholds (`PolicyThresholds`) are configurable. Demand CV, zero-demand sha
 ## parameter-package
 
 The package is a versioned JSON/CSV review package (schema at `/api/parameters/schema.json`). It holds policy, analytical buffer min/max and decoupling-candidate rows, keyed by item code and site code, with effective date, source run, provenance, confidence and blockers. Every native M3 field is `UNMAPPED` until verified, and `erp_write_back` is always false.
+
+## shop-floor-flow
+
+A discrete-event simulation beside the weekly period engine (`backend/app/analytics/flow/`). It takes the same finished-good
+demand, usable stock and open purchase-order receipts as the engine (`build_engine_inputs`), releases demand in lots of at
+most 60 units, nets each lot against stock down the current BOM, and gives every shortfall a child lot (released one week
+earlier per BOM level). A lot starts when all its components exist; its operations follow the item's current routing, one
+work centre and one operation at a time, inside the capacity calendar's shifts (productive time = work content divided by the
+work centre's average availability). Dispatch is earliest due date. Routing operations that are blocked by data quality or lack
+a work centre or standard times are left out and counted, as in the engine; items with overlapping revisions are excluded with
+the demand that depends on them. Open production orders are not used: they overload Welding 1 about 15 times because they were
+generated independently of capacity.
+
+Assumptions (all listed in every evidence drawer): colour is simulated per finished-good lot from a seeded RAL mix and inherited by
+its parts; a colour change on a coating work centre costs 40 minutes, same-colour reload 5 minutes, replacing the routing's batch
+setup on those work centres; defects are drawn per unit (2 % unless a BOM line has a scrap_pct) and found by inspection; component
+inspection 0.5 min/unit, rework 15 and re-inspection 1 min/unit; overtime is a Saturday window of 8 h paid at 1.5 times the work
+centre's hourly cost; a purchased part with no stock or receipt before the lot is due is assumed available at release.
+
+Policies, each compared with "today" on the same plant and seed:
+- Colour grouping: at a coating work centre, among ready work, keep the colour on the line while a same-colour job is due within W days of the earliest-due job.
+- Scrap handling (averaged over seeded runs): defects found at final inspection with the whole product scrapped and remade (today); found at final inspection with only the failed components replaced (remade, reworked, re-inspected); or found by inspecting each component, remaking only the bad units while the parent waits.
+- Kit priority: a component whose parent lacks at most one component, with its other parts available and its release date passed, is served first.
+- Overtime: a Saturday window always paid, or only when the queued work will be used (it feeds a later operation, or its consumer is missing nothing else by Monday). Idle hours are paid hours without work; output waiting more than three days for its consumer is counted as left waiting.
+
+Scrapped units are priced at standard value: purchased material at standard cost plus routing hours at each work centre's hourly cost, plus
+components. Calibration: simulated processing hours are about 0.9 of the period engine's required hours over the same weeks
+(a regression test keeps them within 0.6-1.15); the difference is lot-by-lot netting and an empty shop at the start.
+
+## order-change-impact
+
+Stock points are places where work waits between operations. The named ones are after laser cutting and before painting (colour is
+committed there); every other waiting place, and work in process, appears in the audit at the moment of the change. Everything is
+reconstructed from the operation log of the simulated plan, so what is reported at a stock point (units through, wait, average and peak
+stock, value) is what the simulation did. Value built into a lot = operation hours at the work centre's hourly cost, purchased material
+issued at its first operation, and the finished components it consumed.
+
+A forecast change (a factor applied to demand from a week onward, optionally for a family) is applied at a chosen day. Run A is the plan as
+it stood; run B re-simulates the plant with the changed demand. At the change moment the unwanted share (1 minus the factor) of the work
+that exists on the changed lots is read from run A. It is reusable up to the quantity other open work still needs (run B jobs not started at
+that moment), per item, and after painting only in the same colour; the rest is stranded. Work running on a machine is counted as sunk and
+not reusable. B shows the new load per process (hours), mean lead time, late lots and stock-point stock. B re-plans from the start, so it
+shows the new steady state, not a re-sequencing of work already started.

@@ -243,10 +243,9 @@ def run_period_engine(
     blocked_stock = {item_id: inventory_state.pop(item_id) for item_id in list(inventory_state)
                      if blocking_index.is_entity_blocked("item", item_id)}
     for item_id, boost in buffer_boost_by_item.items():
-        # A buffer decision on a blocked item joins its held-apart stock: until the item's data-quality block
-        # is cleared none of its stock positions count (unchanged rule; receipts are the only usable supply).
-        target = blocked_stock if item_id in blocked_stock or blocking_index.is_entity_blocked("item", item_id) else inventory_state
-        target[item_id] = target.get(item_id, 0.0) + boost
+        # A buffer is a planner's decision to hold new stock, not a recorded balance, so it is usable even on an
+        # item whose recorded on-hand is held apart. (Decided 2026-10-01; before that it joined the blocked stock.)
+        inventory_state[item_id] = inventory_state.get(item_id, 0.0) + boost
     backlog_state: dict[int, float] = {int(wc): 0.0 for wc in work_centres_df["work_centre_id"]}
     constraint_state: dict[int, ConstraintState] = {int(wc): ConstraintState() for wc in work_centres_df["work_centre_id"]}
 

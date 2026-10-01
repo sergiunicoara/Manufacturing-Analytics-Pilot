@@ -191,3 +191,70 @@ Python also computes; parity is asserted, not duplicated logic. No ERP write-bac
 - [ ] Film (out of scope per the user); its files remain uncommitted
 - [x] Final verification 2026-09-30 (ca6f083): 209 passed / 0 skipped strict; browser pass; secured compose override run and probed live
 - Open: the film (out of scope); first ~60 s after an API restart is the background warm-up
+
+# Shop-floor flow simulator (2026-10-01) — BUILT (see REQUIREMENTS_COMPLETION_MATRIX.md section K)
+
+User cases: (1) 40-min colour changeover → batch same colour; (2) a bad subcomponent is found only at final
+inspection, the whole assembly is scrapped with its nine good parts; (3) a shop order missing one component has no
+way to pull that component forward; (4) paid weekend overtime produced parts, but Monday's components were missing →
+idle paid hours; (5) audit WIP at each stage; if the client changes the forecast or cancels, show the change in lead
+time and resources, and the cost already sunk in started work.
+
+Facts that shape the design (exploration report):
+- No colour, scrap, inspection-result, pegging, order-allocation, labour-clock or idle data exist. The period engine
+  aggregates hours per work centre per week: no sequence, no colour, no material gating of added hours (the capacity
+  lever's 3,488 EUR assumes every paid hour is productive). Synthetic sub-assembly orders are not coherent with FG orders.
+- Available: open production orders (341 FG, 1,674 sub) with op status, current BOM/routing, WIP snapshot (232 rows),
+  inventory snapshots, PO lines with expected/actual receipt dates, standard costs, work-centre shifts and cost/hour.
+
+Design: a new discrete-event simulator beside the period engine (the period engine and the five reference
+cases are not touched; verified with the snapshot compare).
+- [ ] 1. Job network (analytics/flow_network.py): open FG orders → current-BOM explosion → pegged sub-assembly jobs.
+      Existing released/in-progress sub orders (with completed ops from production_order_operations) and on-hand stock
+      are allocated to FG demand by due date; shortfall creates new jobs; surplus is reported as unpegged. Purchased
+      parts arrive at PO expected dates (option: actual-date lateness profile). Colour (ASSUMED, seeded, separate RNG
+      stream) is drawn per FG order from the RAL list and inherited by its coated parts (door, panel, plate, frame, canopy).
+      DQ-blocked routings/BOMs are excluded and reported.
+- [ ] 2. Simulator (analytics/flow_sim.py): work centres with parallel lines and weekday shift calendars (06:00, shifts ×
+      hours), availability applied to run time; an op starts when its predecessor is done and, for an assembly op, all
+      components are kitted. Today's behaviour (P0): FIFO by planned start, colour change whenever colour differs.
+      Coating setup = 40-min changeover on colour change, small same-colour setup (parameter) otherwise.
+- [ ] 3. Policies (each switchable, compared against P0, plus all combined):
+      P1 colour batching — a line keeps its colour while a same-colour job is due within W days of the earliest-due job
+         (sweep W = 0/2/5/10). Reports changeovers, hours saved, lateness, downstream assembly waiting.
+      P2 scrap — seeded defect probability per component (bom scrap_pct where set, else a parameter; ASSUMED), N
+         replications. (a) today: found at final inspection, whole assembly scrapped and rebuilt; (b) inspect each
+         component before assembly, remake only the bad one; (c) final inspection, replace only the failed component
+         (rework time parameter). Reports value lost at standard cost, hours lost, FGs completed, lead time.
+      P3 kit priority — an assembly waiting on ≤2 components raises those components' remaining ops to the front.
+         Reports blocked order-days, FGs completed, lead time, orders unblocked.
+      P4 gated overtime — Saturday overtime at chosen work centres: unconditional vs only when the work it processes
+         has its inputs and its consumer's other components ready by Monday. Reports paid, productive and idle overtime
+         hours, output stranded by missing components, cost at cost/hour × premium (parameter 1.5, ASSUMED).
+      P5 change of mind — at day d the client changes demand (± % or cancels orders) for an item or family. WIP audit
+         by stage at d (qty, value, age; reconciled with the WIP snapshot at t0). For affected orders: completed ops,
+         sunk cost (material issued + labour hours done × cost/hour + overhead share), WIP reusable for other open orders
+         vs stranded. Re-simulation after the change: lead time and work-centre hours changes.
+- [ ] 4. Pages and API: "Shop Floor Flow" (P0-P4 comparison) and "Order Change Impact" (WIP by stage + P5), via
+      dashboard.PAGES with evidence on every metric/row/point; POST /api/flow/run (operator auth) for custom parameters.
+      Results are cached in-process, reproducible from seed + parameters (not persisted to SQL in this round).
+- [ ] 5. Tests: tiny hand-built plants per mechanism (changeover count exact, batching window respected, scrap
+      accounting with forced defects, kit priority unblocks, idle-overtime hours exact, sunk cost by hand), calendar
+      (no work outside shifts unless overtime), qty conservation, determinism by seed, full-data runtime budget, reference
+      cases unchanged. Vitest/smoke page lists 12 → 14. One full suite run at the end.
+- [ ] 6. Docs: ANALYTICS_METHODS (new anchors), LIMITATIONS (sequencing modelled only in the simulator; synthetic colour,
+      defect rates and pegging), API.md, README, DEMO_GUIDE, REQUIREMENTS_COMPLETION_MATRIX section K.
+
+Decisions (user, 2026-10-01):
+- Build all five cases in one round; review at the end.
+- Colour: simulated per cabinet (FG) order, seeded, inherited by its coated parts, marked ASSUMED.
+- [ ] 0. A scenario's buffer on an entity-blocked item now COUNTS as usable stock (pre-existing blocked on-hand stays
+      unusable). Expected: BUFFER_ONLY 93.1 → 70.0, COMBINED 77.3 → 60.1; update tests, PILOT_FINDINGS, docs, and
+      flag the film scenes that narrate or show these numbers (14, 15, 18, 20a, 22 and others) for re-capture.
+- Film (docs/demo_film): OUT OF SCOPE for this round (user, 2026-10-01). Not touched further, not committed. Its cut is stale after step 0.
+
+
+## Review (2026-10-01)
+- Built: flow/ (model, plant, sim, analysis), flow_pages.py, two pages, POST /api/flow/change-impact; backend 328 passed, UI 73, browser 4+1 skipped; reference cases unchanged (exact compare).
+- Design changes from the plan (found while building): open production orders are not used as jobs (they overload Welding 1 15x); lots come from the engine's demand; purchase receipts after a lot's due date are ignored and shortages assumed available at release (else procurement delays swamp the shop-floor effects).
+- Open: third stock point ("between ...") not received; commit not requested; film out of scope.

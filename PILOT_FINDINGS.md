@@ -6,11 +6,11 @@ Scenario figures re-verified against the running API on 2026-09-29 (no scenario 
 
 | Case | Final backlog hours | CAB-100 demand-weighted mean lead time | Week 12 CAB-100 lead time |
 | --- | ---: | ---: | ---: |
-| Baseline | 74.4 | 4.24 d | 13.37 d |
-| Demand shock only | 212.2 | 10.08 d | 35.48 d |
-| Buffer only | 93.1 | 5.27 d | 19.52 d |
-| Capacity only | 164.4 | 7.81 d | 25.71 d |
-| Combined | 77.3 | 4.58 d | 15.39 d |
+| Baseline | 74.4 | 4.19 d | 13.37 d |
+| Demand shock only | 212.2 | 10.16 d | 35.48 d |
+| Buffer only | 70.0 | 4.07 d | 14.70 d |
+| Capacity only | 164.4 | 7.76 d | 25.71 d |
+| Combined | 60.1 | 3.70 d | 12.29 d |
 
 Buffer only and capacity only have different physical mechanisms. A buffer supplies inventory before new production is required; capacity increases effective processing hours from the intervention week. In this generated case, buffer only reduces backlog more than the selected 1.10× welding capacity lever over the 12-week horizon. These are computed results, not an enforced ranking.
 
@@ -20,11 +20,11 @@ The values are demand-weighted across CAB-100 finished goods, each evaluated alo
 
 | Case | W1 | W2 | W3 | W4 | W5 | W6 | W7 | W8 | W9 | W10 | W11 | W12 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Baseline | 1.10 | 1.04 | 1.08 | 1.35 | 0.97 | 3.71 | 1.97 | 5.84 | 12.94 | 4.29 | 9.10 | 13.37 |
-| Demand shock only | 1.10 | 1.04 | 1.08 | 1.35 | 0.97 | 8.21 | 10.00 | 13.78 | 26.39 | 12.78 | 27.86 | 35.48 |
-| Buffer only | 1.10 | 1.04 | 1.08 | 1.31 | 0.97 | 3.71 | 5.25 | 5.29 | 16.69 | 4.91 | 13.51 | 19.52 |
-| Capacity only | 1.10 | 1.04 | 1.08 | 1.35 | 0.97 | 7.20 | 7.84 | 10.41 | 21.32 | 8.37 | 21.41 | 25.71 |
-| Combined | 1.10 | 1.04 | 1.08 | 1.31 | 0.97 | 3.71 | 4.19 | 5.29 | 15.28 | 3.52 | 10.51 | 15.39 |
+| Baseline | 1.10 | 1.04 | 1.08 | 1.35 | 0.97 | 1.07 | 1.97 | 5.84 | 12.94 | 4.29 | 9.10 | 13.37 |
+| Demand shock only | 1.10 | 1.04 | 1.08 | 1.35 | 0.97 | 5.56 | 10.00 | 13.78 | 26.39 | 12.78 | 27.86 | 35.48 |
+| Buffer only | 1.10 | 1.04 | 1.08 | 1.25 | 0.97 | 1.07 | 5.25 | 5.24 | 11.50 | 1.93 | 10.13 | 14.70 |
+| Capacity only | 1.10 | 1.04 | 1.08 | 1.35 | 0.97 | 4.55 | 7.84 | 10.41 | 21.32 | 8.37 | 21.41 | 25.71 |
+| Combined | 1.10 | 1.04 | 1.08 | 1.25 | 0.97 | 1.07 | 4.19 | 5.24 | 10.54 | 1.93 | 8.70 | 12.29 |
 
 The baseline itself deteriorates late in the window, reaching 13.37 days at week 12. The chart must retain that trajectory. Pre-intervention periods remain unchanged in the capacity case; improvement appears after effective capacity has acted on backlog. Buffer begins to change net production need in week 4 and therefore can diverge sooner.
 
@@ -60,15 +60,15 @@ All figures below come from the running API and database. The data is synthetic,
 ### Decision economics (EUR, synthetic standard costs; carrying rate 20 % assumed)
 | Case | Ending backlog (h) | Period expense | Buffer capital (balance) |
 | --- | ---: | ---: | ---: |
-| Baseline | 74.4 | 359,502 | 0 |
-| Demand shock only | 212.2 | 355,030 | 0 |
-| Buffer only | 93.1 | 434,038 | 1,771,538 |
-| Capacity only | 164.4 | 358,518 | 0 |
-| Combined | 77.3 | 437,526 | 1,771,538 |
+| Baseline | 74.4 | 390,948 | 0 |
+| Demand shock only | 212.2 | 385,478 | 0 |
+| Buffer only | 70.0 | 469,528 | 1,771,538 |
+| Capacity only | 164.4 | 388,966 | 0 |
+| Combined | 60.1 | 473,016 | 1,771,538 |
 
 - Period expense = inventory carrying cost + added paid hours. The capacity case adds 3,488 EUR of paid hours (8 weeks × 4 h × 73 EUR/h at Welding 1 = 2,336, plus 8 weeks × 4 h × 36 EUR/h at work centre 26 = 1,152). Buffer capital is a balance tied up at standard cost and is not added to the expense.
 - Baseline carrying cost is slightly higher than the shock case; the cause was not investigated, so no explanation is offered. The table shows expense and residual backlog side by side without ranking the interventions. WIP carrying cost is unavailable, and no ROI is produced.
-- Buffer only costs about 79 k EUR more expense and 1.77 M EUR in buffer capital and leaves 93 h of backlog. Capacity only costs about 3.5 k EUR and leaves 164 h. The pilot presents these facts and leaves the choice to planners.
+- Buffer only costs about 79 k EUR more expense than the baseline and 1.77 M EUR in buffer capital and leaves 70 h of backlog. Capacity only costs about 3.5 k EUR and leaves 164 h. The pilot presents these facts and leaves the choice to planners.
 
 ### Planning policy
 - At default thresholds 53 finished goods are make-to-order, 17 are assemble-to-order and 70 have insufficient evidence. 116 decoupling candidates were found.
