@@ -73,6 +73,15 @@ def net_requirement(
     )
 
 
+def net_single_position(gross_requirement: float, on_hand: float, receipts_due: float) -> tuple[float, float, float]:
+    """Scalar form of net_requirement for one unblocked on-hand position and receipts already due by the
+    need date: (usable_inventory, scheduled_receipts, net_requirement). Same rules: non-positive on-hand
+    is not usable, negative receipts are clipped to zero. Used by the period engine in its inner loop."""
+    usable = float(on_hand) if on_hand > 0 else 0.0
+    receipts = float(receipts_due) if receipts_due > 0 else 0.0
+    return usable, receipts, max(0.0, gross_requirement - usable - receipts)
+
+
 def _as_date(value) -> dt.date:
     if isinstance(value, dt.date) and not isinstance(value, dt.datetime):
         return value

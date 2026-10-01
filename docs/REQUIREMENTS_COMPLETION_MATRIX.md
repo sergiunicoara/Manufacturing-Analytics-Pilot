@@ -93,7 +93,7 @@ Final strict run (`REQUIRE_DB_TESTS=1`, secured logins exported): 219 passed, 0 
 
 ## F. UI tests
 
-`frontend`: `npm test` runs 65 Vitest tests (`DashboardApp.test.tsx`, `ExecutiveStoryVisuals.test.tsx`) against a mocked API and mocked Plotly. They cover loading, API errors, stale responses, all twelve pages, the evidence drawer, chart click-through, the scenario lab, stage-record filters and paging, the copilot and the executive story. Deliberately breaking three behaviours (stale-response guard, pager step, drawer reset on navigation) made the matching tests fail. Not covered: real Plotly rendering, styling and a real browser.
+`frontend`: `npm test` runs 66 Vitest tests (`DashboardApp.test.tsx`, `ExecutiveStoryVisuals.test.tsx`) against a mocked API and mocked Plotly. They cover loading, API errors, stale responses, all twelve pages, the evidence drawer, chart click-through, the scenario lab, stage-record filters and paging, the copilot and the executive story. Deliberately breaking three behaviours (stale-response guard, pager step, drawer reset on navigation) made the matching tests fail. Not covered: real Plotly rendering, styling and a real browser.
 
 `npm run test:e2e` (Playwright, system Chrome, against the running stack; read-only) adds a 5-test browser smoke test: every page loads without console errors, a chart renders and a metric opens its evidence, the executive story, stage-record filtering, and the copilot. It found two real defects that are now fixed: a missing favicon (404 in every page load) and a sidebar that could not scroll, which hid the Executive Story link on screens shorter than about 780 px.
 
@@ -115,3 +115,17 @@ Final strict run (`REQUIRE_DB_TESTS=1`, secured logins exported): 219 passed, 0 
 | G12 | Rebuilding the film removed the burned-in captions | `finish_movie.py` burns the SRT into the canonical MP4s and keeps the selectable encodes; `build_film.py` writes `*_draft_*` files, never the canonical names | Burn-in command tested on a short clip; the full film was not rebuilt. The film stays uncommitted and outside the requirements |
 
 Full run after these fixes: backend 233 passed (strict, none skipped), UI 65, browser 5.
+
+## H. Third round (2026-10-01): known gaps closed
+
+| # | Gap | Fix | Verification |
+|---|---|---|---|
+| H1 | Blocked stock was overwritten by that week's receipts | Blocked stock is carried forward untouched (still unusable) | `test_review_fixes_3.py`; in the reference cases inventory rises by about 1,290 units from 2026-07-27, and backlogs are unchanged |
+| H2 | Past-due open receipts were dropped | Available from the first modelled week (standard MRP treatment) | Unit tests; one real line (item 44, 337 units) now covers its week-1 need of 11.82; backlogs unchanged |
+| H3 | Overlapping routing revisions: capacity took the latest, lead time said unavailable | Capacity reports their operations as excluded; both now say "unknown" | Unit test (no overlaps in the synthetic data) |
+| H4 | BI CSV and sidecar could not be swapped atomically | The sidecar records the CSV's SHA-256; `FileBIExportAdapter.verify(name)` detects any mismatch, including a crash between the two renames | Unit tests |
+| H5 | The five-case build took about 40 s | Engine tables indexed once per run (`BomExploder`, `RoutingLoad`, `CapacityCalendar`, scalar netting) | 39.4 s to 3.6 s; exact comparison of every row of the five cases; helper equivalence tests; warm-up 11.9 s |
+| H6 | Charts redrew whenever the evidence drawer opened | Stable evidence handler (`useCallback`) | UI test |
+
+Full run: backend 242 passed (strict, none skipped), UI 66, browser 5. The five reference backlogs are unchanged: 74.4 / 212.2 / 93.1 / 164.4 / 77.3.
+

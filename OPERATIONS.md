@@ -20,15 +20,15 @@ The API loads all synthetic tables and computes the reference comparison on firs
 
 ### Start-up and readiness
 
-After start the API answers within seconds, and a background warm-up computes the reference cases and then the Executive Story (about 70 s in total on the local stack: about 60 s for the five 12-week cases, about 1.5 s for the story). Pages requested while it is still running wait for the same computation rather than starting another; once it finishes, every page is served from the process cache. `GET /health` reports progress:
+After start the API answers within seconds, and a background warm-up computes the reference cases and then the Executive Story (about 13 s in total on the local stack: about 12 s for the five 12-week cases including loading the tables and the data-quality findings, about 1.3 s for the story). Pages requested while it is still running wait for the same computation rather than starting another; once it finishes, every page is served from the process cache. `GET /health` reports progress:
 
 ```json
-{"status": "ok", "warmup": {"enabled": true, "steps": {"reference_cases": "ready", "executive_story": "ready"}, "seconds": {"reference_cases": 61.3, "executive_story": 1.4}, "error": null}}
+{"status": "ok", "warmup": {"enabled": true, "steps": {"reference_cases": "ready", "executive_story": "ready"}, "seconds": {"reference_cases": 11.9, "executive_story": 1.3}, "error": null}}
 ```
 
 A failed step (database down, schema behind) is reported there and in the API log, and requests still compute lazily and retry. Set `WARM_ON_START=false` to disable the warm-up. In the secured profile `/health` is unauthenticated, so it shows only "see server log" instead of the error text.
 
-The Executive Story used to take about four minutes on a cold start because every (item, week, scenario) repeated pandas table filtering. `LeadTimeCalculator` indexes the routing and BOM tables once and is reused across scenarios; results are identical (a frozen copy of the old implementation in `tests/reference_leadtime.py` is compared in `tests/test_leadtime_equivalence.py`).
+The Executive Story used to take about four minutes on a cold start because every (item, week, scenario) repeated pandas table filtering. `LeadTimeCalculator` indexes the routing and BOM tables once and is reused across scenarios; results are identical (a frozen copy of the old implementation in `tests/reference_leadtime.py` is compared in `tests/test_leadtime_equivalence.py`). The period engine follows the same pattern: `BomExploder`, `RoutingLoad` and `CapacityCalendar` index their tables once per run, and netting uses a scalar form of `net_requirement`. The five-case build went from about 39 s to about 4 s, and every work-centre row, material row, inventory total and lead time of the five cases is identical before and after (compared exactly); `tests/test_review_fixes_3.py` checks each helper against the original function.
 
 ## Regenerate
 

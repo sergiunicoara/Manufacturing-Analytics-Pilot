@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from app.analytics.bom import active_bom_headers
+from app.analytics.bom import _as_date as _bom_date
 from app.analytics.models import LineageStep
 
 
@@ -94,6 +94,59 @@ class OneLevelResult:
     blocked_reason: str | None = None
 
 
+class BomExploder:
+    """Indexes items, BOM headers and components once, so a one-level explosion is dictionary lookups
+    instead of pandas filtering. Revision selection is the same rule as bom.active_bom_headers (window
+    covers the date; none = leaf; several = ambiguous). Build one per set of tables and reuse it."""
+
+    def __init__(self, items_df: pd.DataFrame, bom_headers_df: pd.DataFrame, bom_components_df: pd.DataFrame):
+        self.item_codes = {item_id: code for item_id, code in zip(items_df["item_id"], items_df["item_code"])}
+        self.valid_ids = set(items_df["item_id"])
+        self.headers: dict = {}
+        for row in bom_headers_df.to_dict("records"):
+            end = None if pd.isna(row["effective_to"]) else _bom_date(row["effective_to"])
+            self.headers.setdefault(row["parent_item_id"], []).append((_bom_date(row["effective_from"]), end, row))
+        self.components: dict = {}
+        for row in bom_components_df.to_dict("records"):
+            self.components.setdefault(row["bom_id"], []).append(row)
+
+    def explode_one_level(self, item_id: int, qty: float, as_of_date: dt.date) -> OneLevelResult:
+        active = [row for start, end, row in self.headers.get(item_id, ())
+                  if start <= as_of_date and (end is None or end >= as_of_date)]
+        if not active:
+            return OneLevelResult(is_leaf=True)
+        if len(active) > 1:
+            return OneLevelResult(incomplete=True, blocked_reason="ambiguous_bom_revision")
+
+        bom_row = active[0]
+        parent_code = str(self.item_codes[item_id]) if item_id in self.item_codes else "UNKNOWN"
+        children: list[ChildDemand] = []
+        for comp in self.components.get(bom_row["bom_id"], ()):
+            component_item_id = int(comp["component_item_id"])
+            scrap_pct = float(comp["scrap_pct"])
+            quantity_per = float(comp["quantity_per"])
+
+            if component_item_id not in self.valid_ids:
+                children.append(ChildDemand(component_item_id, 0.0, None, incomplete=True, blocked_reason="orphan_component"))
+                continue
+            if scrap_pct >= 1.0 or scrap_pct < 0:
+                children.append(ChildDemand(component_item_id, 0.0, None, incomplete=True, blocked_reason="invalid_scrap_pct"))
+                continue
+            if quantity_per <= 0:
+                children.append(ChildDemand(component_item_id, 0.0, None, incomplete=True, blocked_reason="non_positive_bom_quantity"))
+                continue
+
+            gross = qty * quantity_per / (1.0 - scrap_pct)
+            step = LineageStep(
+                parent_item_id=item_id, parent_item_code=parent_code, bom_id=int(bom_row["bom_id"]),
+                bom_component_id=int(comp["bom_component_id"]), revision=str(bom_row["revision"]),
+                effective_from=bom_row["effective_from"], effective_to=bom_row["effective_to"],
+                quantity_per=quantity_per, scrap_pct=scrap_pct,
+            )
+            children.append(ChildDemand(component_item_id, gross, step))
+        return OneLevelResult(children=children)
+
+
 def explode_one_level(
     item_id: int,
     qty: float,
@@ -103,46 +156,8 @@ def explode_one_level(
     bom_components_df: pd.DataFrame,
 ) -> OneLevelResult:
     """Explodes exactly one BOM level for `item_id` at `qty` — the driving
-    quantity should be the item's NET requirement, not its gross. Reuses
-    bom.py's active_bom_headers so effective-dated revision selection is
-    identical to the CP2 explode() path (single source of truth for "which
-    revision is active on this date")."""
-    items_by_id = items_df.set_index("item_id")
-    valid_ids = set(items_df["item_id"])
-
-    headers = active_bom_headers(item_id, as_of_date, bom_headers_df)
-    if headers.empty:
-        return OneLevelResult(is_leaf=True)
-    if len(headers) > 1:
-        return OneLevelResult(incomplete=True, blocked_reason="ambiguous_bom_revision")
-
-    bom_row = headers.iloc[0]
-    components = bom_components_df.loc[bom_components_df["bom_id"] == bom_row["bom_id"]]
-    parent_code = str(items_by_id.loc[item_id, "item_code"]) if item_id in items_by_id.index else "UNKNOWN"
-
-    children: list[ChildDemand] = []
-    for _, comp in components.iterrows():
-        component_item_id = int(comp["component_item_id"])
-        scrap_pct = float(comp["scrap_pct"])
-        quantity_per = float(comp["quantity_per"])
-
-        if component_item_id not in valid_ids:
-            children.append(ChildDemand(component_item_id, 0.0, None, incomplete=True, blocked_reason="orphan_component"))
-            continue
-        if scrap_pct >= 1.0 or scrap_pct < 0:
-            children.append(ChildDemand(component_item_id, 0.0, None, incomplete=True, blocked_reason="invalid_scrap_pct"))
-            continue
-        if quantity_per <= 0:
-            children.append(ChildDemand(component_item_id, 0.0, None, incomplete=True, blocked_reason="non_positive_bom_quantity"))
-            continue
-
-        gross = qty * quantity_per / (1.0 - scrap_pct)
-        step = LineageStep(
-            parent_item_id=item_id, parent_item_code=parent_code, bom_id=int(bom_row["bom_id"]),
-            bom_component_id=int(comp["bom_component_id"]), revision=str(bom_row["revision"]),
-            effective_from=bom_row["effective_from"], effective_to=bom_row["effective_to"],
-            quantity_per=quantity_per, scrap_pct=scrap_pct,
-        )
-        children.append(ChildDemand(component_item_id, gross, step))
-
-    return OneLevelResult(children=children)
+    quantity should be the item's NET requirement, not its gross. Revision
+    selection matches bom.active_bom_headers (single source of truth for "which
+    revision is active on this date"). Single-call wrapper: loops should build
+    one BomExploder and reuse it."""
+    return BomExploder(items_df, bom_headers_df, bom_components_df).explode_one_level(item_id, qty, as_of_date)

@@ -60,10 +60,10 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from app.analytics.blocking import BlockingIndex
-from app.analytics.capacity import compute_capacity, compute_required_hours_by_work_centre
+from app.analytics.capacity import CapacityCalendar, RoutingLoad
 from app.analytics.constraint import ConstraintState, select_primary_constraint, step_work_centre
-from app.analytics.mrp import compute_low_level_codes, explode_one_level
-from app.analytics.netting import net_requirement
+from app.analytics.mrp import BomExploder, compute_low_level_codes
+from app.analytics.netting import net_single_position
 from app.config import settings
 
 
@@ -151,7 +151,8 @@ def _bucket_receipts_by_item_period(
     for _, row in df.iterrows():
         receipt_date = row["expected_receipt_date"]
         # Assign to exactly one period bucket: the last period whose start
-        # is <= the receipt date (a receipt is available from that week on).
+        # is <= the receipt date (a receipt is available from that week on);
+        # past-due receipts go to the first week, receipts after the horizon are dropped.
         period = None
         for p in horizon_sorted:
             if p <= receipt_date:
@@ -159,7 +160,9 @@ def _bucket_receipts_by_item_period(
             else:
                 break
         if period is None:
-            continue
+            # Past due: an open line whose expected date is already behind us is still expected, so it is
+            # available from the first modelled week (standard MRP treatment of past-due scheduled receipts).
+            period = horizon_sorted[0]
         if receipt_date >= horizon_sorted[-1] + dt.timedelta(days=PERIOD_DAYS):
             continue  # arrives after the last modelled week: it cannot cover demand inside the horizon
         key = (int(row["item_id"]), period)
@@ -208,7 +211,12 @@ def run_period_engine(
     buffer_boost_by_item = buffer_boost_by_item or {}
     min_consecutive = min_consecutive_periods or settings.candidate_constraint_min_consecutive_periods
 
-    items_by_id = items_df.set_index("item_id")
+    # Tables are indexed once per run; the inner loops below are dictionary lookups, not pandas filtering.
+    item_code_by_id = {item_id: str(code) for item_id, code in zip(items_df["item_id"], items_df["item_code"])}
+    item_type_by_id = dict(zip(items_df["item_id"], items_df["item_type"]))
+    exploder = BomExploder(items_df, bom_headers_df, bom_components_df)
+    routing_load = RoutingLoad(routing_headers_df, routing_operations_df)
+    calendar = CapacityCalendar(capacity_calendar_df)
     process_type_by_wc = work_centres_df.set_index("work_centre_id")["process_type"].to_dict()
     workdays_by_wc = work_centres_df.set_index("work_centre_id")["days_per_week"].to_dict()
     base_queue_days = _base_queue_time_days_by_work_centre(routing_operations_df)
@@ -251,35 +259,34 @@ def run_period_engine(
             for item_id in items_at_level:
                 gross = demand_by_item[item_id]
                 gross_by_item[item_id] = gross_by_item.get(item_id, 0.0) + gross
-                item_code = str(items_by_id.loc[item_id, "item_code"]) if item_id in items_by_id.index else "UNKNOWN"
+                item_code = item_code_by_id.get(item_id, "UNKNOWN")
 
-                usable = 0.0 if blocking_index.is_entity_blocked("item", item_id) else inventory_state.get(item_id, 0.0)
+                blocked = blocking_index.is_entity_blocked("item", item_id)
+                stored = inventory_state.get(item_id, 0.0)
+                usable = 0.0 if blocked else stored
                 receipts = receipts_by_item_period.get((item_id, period), 0.0)
-                inv_rows = pd.DataFrame([{"on_hand_qty": usable, "is_blocked": False}]) if usable != 0 else pd.DataFrame(
-                    columns=["on_hand_qty", "is_blocked"]
-                )
-                po_rows = pd.DataFrame([{
-                    "qty_ordered": receipts, "qty_received": 0.0, "expected_receipt_date": period, "status": "OPEN",
-                }]) if receipts > 0 else pd.DataFrame(columns=["qty_ordered", "qty_received", "expected_receipt_date", "status"])
-
-                result = net_requirement(item_id, item_code, gross, period, inv_rows, po_rows)
-                net_by_item[item_id] = net_by_item.get(item_id, 0.0) + result.net_requirement
+                # Scalar form of netting.net_requirement for one position (same rules; see its tests).
+                usable_inventory, scheduled_receipts, net = net_single_position(gross, usable, receipts)
+                net_by_item[item_id] = net_by_item.get(item_id, 0.0) + net
 
                 available = usable + receipts
                 consumed = min(available, gross)
-                inventory_state[item_id] = max(0.0, available - consumed)
+                # Blocked stock cannot be used, but it is still physically there: carry it forward untouched
+                # instead of overwriting it with what is left of this week's receipts.
+                held_back = stored if blocked else 0.0
+                inventory_state[item_id] = held_back + max(0.0, available - consumed)
 
                 output.material_results.append(MaterialRequirementPeriodResult(
                     item_id=item_id, item_code=item_code, period_start_date=period,
-                    gross_requirement=result.gross_requirement, usable_inventory=result.usable_inventory,
-                    scheduled_receipts=result.scheduled_receipts, net_requirement=result.net_requirement,
-                    shortage_flag=result.shortage_quantity > 0,
+                    gross_requirement=gross, usable_inventory=usable_inventory,
+                    scheduled_receipts=scheduled_receipts, net_requirement=net,
+                    shortage_flag=net > 0,
                 ))
 
-                if result.net_requirement <= 0 or blocking_index.is_entity_blocked("item", item_id):
+                if net <= 0 or blocked:
                     continue  # nothing left to build, or branch blocked — do not cascade further
 
-                one_level = explode_one_level(item_id, result.net_requirement, period, items_df, bom_headers_df, bom_components_df)
+                one_level = exploder.explode_one_level(item_id, net, period)
                 if one_level.incomplete:
                     continue  # ambiguous revision etc. — do not silently cascade a guess
                 for child in one_level.children:
@@ -298,11 +305,9 @@ def run_period_engine(
         #        not need to be re-produced this period). ---
         production_qty_by_item = {
             item_id: qty for item_id, qty in net_by_item.items()
-            if item_id in items_by_id.index and items_by_id.loc[item_id, "item_type"] in ("FG", "SUBASSY")
+            if item_type_by_id.get(item_id) in ("FG", "SUBASSY")
         }
-        required_by_wc, excluded_ops = compute_required_hours_by_work_centre(
-            production_qty_by_item, routing_headers_df, routing_operations_df, blocking_index, period
-        )
+        required_by_wc, excluded_ops = routing_load.required_hours(production_qty_by_item, blocking_index, period)
 
         # --- 4-8. Per work centre: capacity tiers, backlog/queue, WIP, classification. ---
         classifications_this_period: dict[int, str] = {}
@@ -311,10 +316,8 @@ def run_period_engine(
             required_hours = required_by_wc.get(wc_id, 0.0)
             multiplier = _resolve_capacity_multiplier(capacity_multiplier_by_work_centre.get(wc_id, 1.0), period)
 
-            cap = compute_capacity(
-                wc_id, period, required_hours, capacity_calendar_df, blocking_index, excluded_ops,
-                effective_hours_multiplier=multiplier,
-            )
+            cap = calendar.compute(wc_id, period, required_hours, blocking_index, excluded_ops,
+                                   effective_hours_multiplier=multiplier)
 
             backlog_start = backlog_state[wc_id]
             # Gate on utilization_pct (NaN whenever compute_capacity judged

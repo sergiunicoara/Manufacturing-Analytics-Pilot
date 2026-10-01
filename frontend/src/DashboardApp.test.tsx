@@ -218,6 +218,16 @@ describe("charts", () => {
     expect(within(screen.getByRole("dialog")).getByText("point two")).toBeInTheDocument();
   });
 
+  it("does not redraw the chart when the evidence drawer opens or closes", async () => {
+    const { user } = setup();
+    render(<DashboardApp />);
+    await waitFor(() => expect(plotCalls.length).toBeGreaterThan(0));
+    const drawn = plotCalls.length;
+    await user.click(screen.getByRole("button", { name: /Open orders/ }));
+    await user.click(screen.getByRole("button", { name: "Close evidence" }));
+    expect(plotCalls).toHaveLength(drawn);
+  });
+
   it("purges the plot when the page unmounts", async () => {
     setup();
     const { unmount } = render(<DashboardApp />);

@@ -1,6 +1,7 @@
 """SIMULATED file adapters implementing the integration protocols. No external system is contacted."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -28,10 +29,18 @@ class CsvERPAdapter:
 
 
 class FileBIExportAdapter:
-    """Writes a CSV plus a sidecar JSON with provenance, so the BI tool never receives a bare number."""
+    """Writes a CSV plus a sidecar JSON with provenance, so the BI tool never receives a bare number.
+
+    Two files cannot be replaced in one atomic step, so the pairing is made verifiable instead: the sidecar
+    records the SHA-256 of the exact CSV bytes it describes, and `verify(name)` checks it. Everything that can
+    fail (writing either file, serialising the metadata) happens on temporary files before the live files are
+    touched; a crash between the two final renames leaves a pair that `verify` reports as mismatched."""
 
     def __init__(self, directory: str | Path):
         self.directory = Path(directory)
+
+    def _paths(self, name: str) -> tuple[Path, Path]:
+        return self.directory / f"{name}.csv", self.directory / f"{name}.meta.json"
 
     def export(self, name: str, frame: pd.DataFrame, metadata: dict) -> str:
         problems = []
@@ -41,21 +50,30 @@ class FileBIExportAdapter:
         if problems:
             raise AdapterError(problems)
         self.directory.mkdir(parents=True, exist_ok=True)
-        path = self.directory / f"{name}.csv"
-        meta_path = self.directory / f"{name}.meta.json"
-        # Everything that can fail (serialising the metadata, writing either file) happens on temporary files first;
-        # the live files are swapped in only afterwards, so a failure never pairs new data with an old sidecar.
-        meta_text = json.dumps(metadata, indent=2, default=str)
+        path, meta_path = self._paths(name)
         temp_csv, temp_meta = path.with_name(path.name + ".tmp"), meta_path.with_name(meta_path.name + ".tmp")
         try:
             frame.to_csv(temp_csv, index=False)
-            temp_meta.write_text(meta_text, encoding="utf-8")
+            digest = hashlib.sha256(temp_csv.read_bytes()).hexdigest()
+            temp_meta.write_text(json.dumps({**metadata, "csv_sha256": digest}, indent=2, default=str),
+                                 encoding="utf-8")
             os.replace(temp_csv, path)
             os.replace(temp_meta, meta_path)
         finally:
             for leftover in (temp_csv, temp_meta):
                 leftover.unlink(missing_ok=True)
         return str(path)
+
+    def verify(self, name: str) -> bool:
+        """True only when both files exist and the sidecar describes exactly this CSV."""
+        path, meta_path = self._paths(name)
+        if not path.exists() or not meta_path.exists():
+            return False
+        try:
+            recorded = json.loads(meta_path.read_text(encoding="utf-8")).get("csv_sha256")
+        except json.JSONDecodeError:
+            return False
+        return recorded == hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class JsonlMESAdapter:

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import "./dashboard.css";
 import "./responsive.css";
@@ -104,7 +104,8 @@ export function DashboardApp() {
   const [scenarioResult,setScenarioResult]=useState<{metrics:Entry[];run_id:number}|null>(null);
   useEffect(()=>{let active=true;setLoading(true);setError("");setPage(null); const url=slug==="story"?`${API}/story`:`${API}/api/pages/${slug}`;fetch(url).then(async r=>{const p=await r.json();if(!r.ok)throw new Error(p.detail??"API unavailable");return p;}).then(p=>{if(active){if(slug==="story")setStory(p);else setPage(p);}}).catch(e=>{if(active)setError(String(e));}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[slug]);
   const choose = (next:string) => {setEvidence(null);setSlug(next);};
-  const openEvidence=(next:Evidence)=>setEvidence(next);
+  // Stable identity: the charts depend on this handler, so a new function per render would redraw them whenever the drawer opens.
+  const openEvidence=useCallback((next:Evidence)=>setEvidence(next),[]);
   const bars=["capacity","scenario-lab","demand-forecast","stage-performance","decision-economics"].includes(slug);
   return <div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">M</span><div><strong>Manufacturing<br/>Analytics</strong><small>Decision pilot</small></div></div><div className="nav-caption">WORKSPACE</div><nav>{PAGES.map(([id,name,icon])=><button key={id} onClick={()=>choose(id)} className={slug===id?"selected":""}><span>{icon}</span>{name}</button>)}</nav><div className="nav-caption">PRESENT</div><button className={`story-link ${slug==="story"?"selected":""}`} onClick={()=>choose("story")}>▶ Executive Story</button><div className="side-foot">Synthetic data · 12-week story<br/>Evidence attached to each result</div></aside>
     <main className="dashboard-main"><div className="topbar"><span>OPERATIONS INTELLIGENCE / {slug==="story"?"EXECUTIVE STORY":page?.title?.toUpperCase()??"LOADING"}</span><span className="live-pill">● Synthetic pilot</span></div>
