@@ -24,6 +24,7 @@ The five 12-week reference cases are computed once per API process, in the backg
 - `backend/app/synthetic`: deterministic data generation.
 - `backend/app/dq`: data quality and blocking rules.
 - `backend/app/analytics`: pure planning calculations, scenario engine, evidence, and read models.
+- `backend/app/analytics/flow`, `flow_pages.py`: shop-floor discrete-event simulator and the four pages built on it (Shop Floor Flow, Order Change Impact, Stock Points, Forecast Updates).
 - `backend/app/api.py`: dashboard, scenario, story, and copilot endpoints.
 - `backend/app/security.py`: profile validation and API-key authorization (demo vs. secured).
 - `backend/app/integration`, `backend/app/integrations`: data-request completeness checker; simulated ERP / BI / MES adapters.
