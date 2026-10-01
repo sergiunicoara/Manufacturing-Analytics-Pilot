@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -41,9 +42,19 @@ class FileBIExportAdapter:
             raise AdapterError(problems)
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self.directory / f"{name}.csv"
-        frame.to_csv(path, index=False)
-        (self.directory / f"{name}.meta.json").write_text(json.dumps(metadata, indent=2, default=str),
-                                                         encoding="utf-8")
+        meta_path = self.directory / f"{name}.meta.json"
+        # Everything that can fail (serialising the metadata, writing either file) happens on temporary files first;
+        # the live files are swapped in only afterwards, so a failure never pairs new data with an old sidecar.
+        meta_text = json.dumps(metadata, indent=2, default=str)
+        temp_csv, temp_meta = path.with_name(path.name + ".tmp"), meta_path.with_name(meta_path.name + ".tmp")
+        try:
+            frame.to_csv(temp_csv, index=False)
+            temp_meta.write_text(meta_text, encoding="utf-8")
+            os.replace(temp_csv, path)
+            os.replace(temp_meta, meta_path)
+        finally:
+            for leftover in (temp_csv, temp_meta):
+                leftover.unlink(missing_ok=True)
         return str(path)
 
 

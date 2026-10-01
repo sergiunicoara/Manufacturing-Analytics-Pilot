@@ -22,11 +22,20 @@ The pilot has two profiles. **demo** runs locally on synthetic data only and is 
 
 Every value below must come from the environment or a secret store; `docker-compose.secured.yml` has no defaults and refuses to start without them. Docker Compose interpolates the whole file, so `MSSQL_SA_PASSWORD` is required even when only the API is restarted; the API itself never receives it.
 
+On a fresh SQL Server instance the order matters: the secured API logs in as `pilot_app`, which does not exist until an administrator has created it, so the logins are created **before** the API is switched to the secured profile.
+
 ```bash
-# set these in the shell (values from a password manager; never commit them):
-#   MSSQL_SA_PASSWORD, PILOT_APP_PASSWORD, PILOT_READER_API_KEYS, PILOT_OPERATOR_API_KEYS (each key >= 24 characters), ALLOWED_ORIGINS
+# 1. Bootstrap as administrator (demo profile: loads the data and applies the migrations, which create the database roles).
+#    Follow the README start-up steps.
+docker compose up -d sqlserver api
+
+# 2. Still as administrator, create the two logins (or rotate their passwords). The administrator password is passed
+#    explicitly; security_setup never uses the API's own login. Values come from a password manager; never commit them.
+docker exec -e MSSQL_ADMIN_PASSWORD -e PILOT_READER_PASSWORD -e PILOT_APP_PASSWORD -w /app mfg_pilot_api python -m app.db.security_setup
+
+# 3. Switch the API to the secured profile (recreates the api container; each key >= 24 characters):
+#    needs MSSQL_SA_PASSWORD, PILOT_APP_PASSWORD, PILOT_READER_API_KEYS, PILOT_OPERATOR_API_KEYS, ALLOWED_ORIGINS in the shell
 docker compose -f docker-compose.yml -f docker-compose.secured.yml up -d sqlserver api
-docker exec -e PILOT_READER_PASSWORD -e PILOT_APP_PASSWORD -w /app mfg_pilot_api python -m app.db.security_setup   # as administrator; creates the logins, or rotates their passwords
 ```
 
 Clients send `X-API-Key: <key>`. To return to the demo profile, run `docker compose up -d --no-deps api` without the override.

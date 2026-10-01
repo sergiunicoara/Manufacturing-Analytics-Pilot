@@ -26,11 +26,25 @@ class CapacityResult:
     excluded_routing_operation_ids: list[int]
 
 
+def _routing_by_item(routing_headers_df: pd.DataFrame, period: dt.date | None) -> dict[int, int]:
+    if period is None or "effective_from" not in routing_headers_df.columns:
+        return routing_headers_df.set_index("item_id")["routing_id"].to_dict()
+    def to_date(value):
+        return None if pd.isna(value) else pd.Timestamp(value).date()
+
+    starts = routing_headers_df["effective_from"].map(to_date)
+    ends = routing_headers_df["effective_to"].map(to_date)
+    effective = routing_headers_df.assign(_start=starts).loc[
+        [(s is not None and s <= period) and (e is None or e >= period) for s, e in zip(starts, ends)]]
+    return effective.sort_values("_start").set_index("item_id")["routing_id"].to_dict()
+
+
 def compute_required_hours_by_work_centre(
     production_qty_by_item: dict[int, float],
     routing_headers_df: pd.DataFrame,
     routing_operations_df: pd.DataFrame,
     blocking_index: BlockingIndex,
+    period_start_date: dt.date | None = None,
 ) -> tuple[dict[int, float], list[int]]:
     """Rough-cut capacity load: every routing operation for every item being
     produced this period loads its work centre in this same period (no
@@ -40,8 +54,12 @@ def compute_required_hours_by_work_centre(
     work centre, invalid batch/yield) is excluded from the total — it does
     not block the item's other operations or any other item/work centre
     [CP3 req. 2].
+
+    With `period_start_date`, each item uses the routing revision effective in that week (the same
+    effective-dating the lead-time calculation applies); if several are effective the latest
+    `effective_from` wins. Without it (or without effective-date columns) the routing table is taken as is.
     """
-    routing_id_by_item = routing_headers_df.set_index("item_id")["routing_id"].to_dict()
+    routing_id_by_item = _routing_by_item(routing_headers_df, period_start_date)
     required: dict[int, float] = {}
     excluded: list[int] = []
 

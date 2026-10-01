@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -194,6 +195,8 @@ def main() -> None:
     for r in report["results"]:
         if r["status"] != PASS:
             print(f"  {r['status']:5s} {r['dataset']:28s} {r['check']:52s} {r['detail']}")
+    if report["overall"] == BLOCK:
+        sys.exit(1)   # automation must stop on a blocking gap: exit status 1 (WARN and PASS exit 0)
 
 
 if __name__ == "__main__":

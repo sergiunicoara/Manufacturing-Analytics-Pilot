@@ -381,6 +381,24 @@ describe("stage performance records", () => {
     expect(await screen.findByText("No operations in this class.")).toBeInTheDocument();
   });
 
+  it("drops the old table when a filter change fails, so filters and rows never disagree", async () => {
+    let failNext = false;
+    const records = vi.fn((url: URL) => {
+      if (failNext) throw new HttpError(500, { detail: "Records unavailable today" });
+      return { total: 1, records: [record(1, url.searchParams.get("record_class") || "ALL")] };
+    });
+    const { user } = setup({ "/api/stage-performance/records": records });
+    render(<DashboardApp />);
+    await user.click(navButton(/Stage Performance/));
+    await screen.findByText("1 matching operations");
+    expect(screen.getByText("OPEN_STARTED", { selector: "td" })).toBeInTheDocument();
+    failNext = true;
+    await user.selectOptions(screen.getByLabelText("Record class"), "DUPLICATE");
+    expect(await screen.findByText(/Records unavailable today/)).toBeInTheDocument();
+    expect(screen.queryByText("OPEN_STARTED", { selector: "td" })).not.toBeInTheDocument();
+    expect(screen.queryByText("1 matching operations")).not.toBeInTheDocument();
+  });
+
   it("shows the records error", async () => {
     const { user } = setup({ "/api/stage-performance/records": () => { throw new HttpError(500, { detail: "Records unavailable today" }); } });
     render(<DashboardApp />);

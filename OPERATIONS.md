@@ -6,7 +6,7 @@
 
 ## Schema and migrations
 
-`db/ddl/001_schema.sql` is the destructive bootstrap: it drops and recreates every table (including `cost_results` and the `schema_migrations` ledger, which it resets). `app.loader.load_staging_to_sql` then applies `db/migrations/*.sql` in name order, so a reload always ends with a current schema. The migrations are rerunnable and never drop data: `003` result table, `100` read models (`CREATE OR ALTER`), `200` database roles, `300` run data version.
+`db/ddl/001_schema.sql` is the destructive bootstrap: it drops and recreates every table (including `cost_results` and the `schema_migrations` ledger, which it resets). `app.loader.load_staging_to_sql` then applies `db/migrations/*.sql` in name order, so a reload always ends with a current schema. Before anything is dropped the loader checks the staged CSVs against the data-request contract and aborts on a BLOCK (`--skip-completeness` overrides); `python -m app.integration.completeness` exits 1 on a BLOCK so scripts can stop. The migrations are rerunnable and never drop data: `003` result table, `100` read models (`CREATE OR ALTER`), `200` database roles, `300` run data version.
 
 For an existing database, apply anything pending with an administrator login:
 
@@ -53,7 +53,7 @@ See [docs/RESTORE_RUNBOOK.md](docs/RESTORE_RUNBOOK.md) (new database only, never
 
 ## Verify
 
-Run `PYTHONPATH=backend python -m pytest backend/tests -q` from the project root (PowerShell: `$env:PYTHONPATH='backend'; python -m pytest backend/tests -q`). Run `npm test` in `frontend` (Vitest, jsdom and Testing Library; Plotly and `fetch` are mocked, so no API or database is needed) and `npm run build`. The UI tests cover page loading and errors, all twelve navigation targets, the evidence drawer, chart click-through, the scenario lab, the stage-record filters and paging, the copilot and the executive story. Check `/health`, `/kpi/plant-overview`, `/api/executive-story`, `/story`, and the dashboard in a browser.
+Run `PYTHONPATH=backend python -m pytest backend/tests -q` from the project root (PowerShell: `$env:PYTHONPATH='backend'; python -m pytest backend/tests -q`). Run `npm test` in `frontend` (Vitest, jsdom and Testing Library; Plotly and `fetch` are mocked, so no API or database is needed) and `npm run build`. With the stack running, `npm run test:e2e` runs a read-only browser smoke test in the system Chrome (set `PILOT_BROWSER_CHANNEL` for another browser). The UI tests cover page loading and errors, all twelve navigation targets, the evidence drawer, chart click-through, the scenario lab, the stage-record filters and paging, the copilot and the executive story. Check `/health`, `/kpi/plant-overview`, `/api/executive-story`, `/story`, and the dashboard in a browser.
 
 ### Dependency checks
 
@@ -72,7 +72,7 @@ Three test files need SQL Server: SQL/Python parity of the read models, and (wit
 docker exec -e REQUIRE_DB_TESTS=1 -e PILOT_READER_PASSWORD -e PILOT_APP_PASSWORD -w /app mfg_pilot_api python -m pytest -q -rs
 ```
 
-Create the two logins (or rotate their passwords) with `python -m app.db.security_setup`, supplying passwords through the `PILOT_READER_PASSWORD` and `PILOT_APP_PASSWORD` environment variables (from a password manager or a local ignored file; never commit them). The final line of a healthy run has no skips.
+Create the two logins (or rotate their passwords) with `python -m app.db.security_setup`, supplying the administrator password (`MSSQL_ADMIN_PASSWORD`) and the new passwords through `PILOT_READER_PASSWORD` and `PILOT_APP_PASSWORD` environment variables (from a password manager or a local ignored file; never commit them). The final line of a healthy run has no skips.
 
 ## Checkpoint report scripts
 

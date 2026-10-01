@@ -134,6 +134,9 @@ def _avg_minutes_per_unit_by_work_centre(routing_operations_df: pd.DataFrame) ->
     return {int(wc): float(minutes) for wc, minutes in grp.items() if minutes > 0}
 
 
+PERIOD_DAYS = 7   # the engine steps in weekly periods
+
+
 def _bucket_receipts_by_item_period(
     purchase_order_lines_df: pd.DataFrame, horizon: list[dt.date]
 ) -> dict[tuple[int, dt.date], float]:
@@ -157,6 +160,8 @@ def _bucket_receipts_by_item_period(
                 break
         if period is None:
             continue
+        if receipt_date >= horizon_sorted[-1] + dt.timedelta(days=PERIOD_DAYS):
+            continue  # arrives after the last modelled week: it cannot cover demand inside the horizon
         key = (int(row["item_id"]), period)
         bucketed[key] = bucketed.get(key, 0.0) + float(row["remaining_qty"])
     return bucketed
@@ -282,6 +287,12 @@ def run_period_engine(
                         continue  # orphan/invalid component — that branch's DQ finding already covers it
                     demand_by_item[child.component_item_id] = demand_by_item.get(child.component_item_id, 0.0) + child.gross_qty
 
+        # A receipt for an item with no demand this week is not lost: it joins the carried inventory, so
+        # later demand sees it. (Items netted above already folded their receipts into inventory_state.)
+        for (receipt_item_id, receipt_period), receipt_qty in receipts_by_item_period.items():
+            if receipt_period == period and receipt_item_id not in gross_by_item:
+                inventory_state[receipt_item_id] = inventory_state.get(receipt_item_id, 0.0) + receipt_qty
+
         # --- 3. Routing load: only manufactured items' NET requirement
         #        drives work-centre hours (inventory already on hand does
         #        not need to be re-produced this period). ---
@@ -290,7 +301,7 @@ def run_period_engine(
             if item_id in items_by_id.index and items_by_id.loc[item_id, "item_type"] in ("FG", "SUBASSY")
         }
         required_by_wc, excluded_ops = compute_required_hours_by_work_centre(
-            production_qty_by_item, routing_headers_df, routing_operations_df, blocking_index
+            production_qty_by_item, routing_headers_df, routing_operations_df, blocking_index, period
         )
 
         # --- 4-8. Per work centre: capacity tiers, backlog/queue, WIP, classification. ---

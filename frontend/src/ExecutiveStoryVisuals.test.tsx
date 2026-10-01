@@ -105,4 +105,20 @@ describe("ExecutiveStoryVisuals", () => {
     second.unmount();
     expect(Plotly.purge).toHaveBeenCalledTimes(2);
   });
+
+  it("shows n/a instead of crashing when a scenario's lead time is unavailable", async () => {
+    const story = leadStory();
+    story.lead_time_series.COMBINED[11] = { ...story.lead_time_series.COMBINED[11], total_days: null as any,
+      processing_days: null as any, queue_days: null as any, transfer_days: null as any };
+    const onEvidence = vi.fn();
+    mockApi({ "/api/executive-story": story });
+    const user = userEvent.setup();
+    render(<ExecutiveStoryVisuals onEvidence={onEvidence} />);
+    const cards = await screen.findAllByRole("button", { name: /Week 12/ });
+    expect(cards[4]).toHaveTextContent("Combined");
+    expect(cards[4]).toHaveTextContent("n/a");
+    expect(cards[4]).not.toHaveTextContent("NaN");
+    await user.click(cards[4]);
+    expect(onEvidence).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,13 +1,17 @@
 """Create the least-privilege logins from environment secrets and map them to the migration's roles.
 
-Run as an administrator, once per database:
-  PILOT_READER_PASSWORD=... PILOT_APP_PASSWORD=... python -m app.db.security_setup
+Run as an administrator, once per database, BEFORE the API is started with the secured profile (the
+secured API logs in as `pilot_app`, which does not exist until this has run):
+  MSSQL_ADMIN_PASSWORD=... PILOT_READER_PASSWORD=... PILOT_APP_PASSWORD=... python -m app.db.security_setup
+The administrator login is `MSSQL_ADMIN_USER` (default `sa`) with `MSSQL_ADMIN_PASSWORD` (or `MSSQL_SA_PASSWORD`);
+it is independent of the login the API itself uses.
 Passwords are passed as query parameters and quoted inside T-SQL (REPLACE-doubled quotes); they are never
 interpolated into SQL text in Python, printed or logged. An existing login gets its password rotated to the supplied value.
 """
 from __future__ import annotations
 
 import os
+from urllib.parse import quote_plus
 
 from app.db.connection import get_engine
 from app.db.restore import validate_name
@@ -73,6 +77,17 @@ def _run(engine, sql: str, params: tuple) -> str | None:
         raw.close()
 
 
+def admin_urls(database: str) -> tuple[str, str]:
+    """(master URL, database URL) for the administrator login, built from the environment, not the API's settings."""
+    password = os.environ.get("MSSQL_ADMIN_PASSWORD") or os.environ.get("MSSQL_SA_PASSWORD")
+    if not password:
+        raise SystemExit("Set MSSQL_ADMIN_PASSWORD (the administrator login); the API's own login cannot create logins.")
+    user = os.environ.get("MSSQL_ADMIN_USER", "sa")
+    base = (f"mssql+pyodbc://{quote_plus(user)}:{quote_plus(password)}@{settings.mssql_host}:{settings.mssql_port}/{{db}}"
+            "?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes")
+    return base.replace("{db}", "master"), base.replace("{db}", database)
+
+
 def setup(database: str | None = None) -> list[str]:
     database = validate_name(database or settings.mssql_database)
     missing = [env for env, _ in LOGINS.values() if not os.environ.get(env)]
@@ -81,8 +96,8 @@ def setup(database: str | None = None) -> list[str]:
     too_long = password_problems({env: os.environ[env] for env, _ in LOGINS.values()})
     if too_long:
         raise SystemExit("; ".join(too_long))
-    master = get_engine(settings.mssql_odbc_url_master)
-    target = get_engine()
+    master_url, target_url = admin_urls(database)
+    master, target = get_engine(master_url), get_engine(target_url)
     done = []
     for login, (env, role) in LOGINS.items():
         action = _run(master, CREATE_OR_ROTATE_LOGIN, (login, os.environ[env], database))

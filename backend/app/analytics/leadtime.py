@@ -116,11 +116,14 @@ class LeadTimeCalculator:
             queue += queue_minutes / 1440.0
             if wc_id is not None:
                 wc = wc_results_by_period.get((wc_id, period))
-                if wc is not None and not math.isnan(wc.effective_hours_per_workday):
-                    if wc.effective_hours_per_workday > 0:
-                        operating_days = max(1, float(wc.effective_days_per_week))
-                        wait_workdays = wc.backlog_hours_at_entry / wc.effective_hours_per_workday
-                        queue += wait_workdays * 7.0 / operating_days
+                # No usable capacity figure for a centre on the route means the wait is unknown, not zero:
+                # report the route as unavailable rather than an optimistic finite lead time.
+                if (wc is None or math.isnan(wc.effective_hours_per_workday) or wc.effective_hours_per_workday <= 0
+                        or math.isnan(wc.backlog_hours_at_entry)):
+                    return None
+                operating_days = max(1, float(wc.effective_days_per_week))
+                wait_workdays = wc.backlog_hours_at_entry / wc.effective_hours_per_workday
+                queue += wait_workdays * 7.0 / operating_days
         return processing, queue, transfer
 
     def _longest_path(self, node: int, qty: float, seen: frozenset, period: dt.date,

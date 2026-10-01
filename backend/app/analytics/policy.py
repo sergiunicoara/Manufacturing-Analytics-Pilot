@@ -94,10 +94,41 @@ def weekly_demand_stats(sales_orders: pd.DataFrame, sales_order_lines: pd.DataFr
     return pd.DataFrame(rows)
 
 
-def children_by_parent(bom_headers: pd.DataFrame, bom_components: pd.DataFrame) -> dict[int, set[int]]:
+def current_as_of(sales_orders: pd.DataFrame) -> dt.date:
+    """The evaluation date for 'current' structure: the latest order in the data."""
+    return pd.to_datetime(sales_orders["order_date"]).max().date()
+
+
+def children_by_parent(bom_headers: pd.DataFrame, bom_components: pd.DataFrame,
+                       as_of: dt.date | None = None) -> dict[int, set[int]]:
+    """Component sets per parent. With `as_of`, only the BOM revision effective on that date counts, so an
+    expired revision's components are not mixed with the current one's."""
+    if as_of is not None and "effective_from" in bom_headers.columns:
+        def to_date(value):
+            return None if pd.isna(value) else pd.Timestamp(value).date()
+
+        window = list(zip(bom_headers["effective_from"].map(to_date), bom_headers["effective_to"].map(to_date)))
+        bom_headers = bom_headers.loc[[(s is not None and s <= as_of) and (e is None or e >= as_of) for s, e in window]]
     parent = bom_headers.set_index("bom_id")["parent_item_id"]
     comps = bom_components.assign(parent_item_id=bom_components["bom_id"].map(parent)).dropna(subset=["parent_item_id"])
     return {int(p): set(g["component_item_id"].astype(int)) for p, g in comps.groupby("parent_item_id")}
+
+
+def reaches_cycle(item_id: int, children: dict[int, set[int]]) -> bool:
+    """True when the structure below `item_id` contains a cycle (an item that is, directly or not, its own component)."""
+    done: set[int] = set()
+
+    def visit(node: int, path: frozenset) -> bool:
+        if node in path:
+            return True
+        if node in done:
+            return False
+        if any(visit(child, path | {node}) for child in children.get(node, ())):
+            return True
+        done.add(node)
+        return False
+
+    return visit(item_id, frozenset())
 
 
 def _longest_branch_days(item_id: int, children: dict[int, set[int]], item_type: dict[int, str],
@@ -124,13 +155,15 @@ def recommend_policies(tables: dict[str, pd.DataFrame], forecast_wape_by_item: d
     tolerance = customer_tolerance_days(tables["sales_orders"], tables["sales_order_lines"]).set_index("item_id")
     production = production_elapsed_days(tables["production_orders"]).set_index("item_id")
     demand = weekly_demand_stats(tables["sales_orders"], tables["sales_order_lines"]).set_index("item_id")
-    children = children_by_parent(tables["bom_headers"], tables["bom_components"])
+    children = children_by_parent(tables["bom_headers"], tables["bom_components"], current_as_of(tables["sales_orders"]))
     own_days = {int(i): float(r["own_route_days"]) for i, r in production.iterrows()
                 if r["completed_orders"] >= thresholds.min_completed_production_orders}
 
     out = []
     for item_id in items.loc[items["item_type"] == "FG", "item_id"].astype(int):
         blockers, reasons = [], []
+        if reaches_cycle(item_id, children):
+            blockers.append("The bill of materials contains a cycle, so the cumulative time cannot be measured.")
         tol = tolerance.loc[item_id] if item_id in tolerance.index else None
         if tol is None or tol["order_count"] < thresholds.min_order_count:
             blockers.append(f"Fewer than {thresholds.min_order_count} sales order lines to measure customer tolerance.")
@@ -139,7 +172,7 @@ def recommend_policies(tables: dict[str, pd.DataFrame], forecast_wape_by_item: d
                             "with recorded start and finish.")
         manufactured_children = [c for c in children.get(item_id, ()) if item_type.get(c) not in PURCHASED]
         branch = _longest_branch_days(item_id, children, item_type, own_days) if item_id in own_days else None
-        if item_id in own_days and branch is None:
+        if item_id in own_days and branch is None and not reaches_cycle(item_id, children):
             blockers.append("A manufactured component has too few recorded production orders to measure its time.")
         d = demand.loc[item_id] if item_id in demand.index else None
         cv = None if d is None or pd.isna(d["demand_cv"]) else float(d["demand_cv"])
@@ -199,7 +232,7 @@ def decoupling_candidates(tables: dict[str, pd.DataFrame], constrained_work_cent
     items = tables["items"]
     item_type = items.set_index("item_id")["item_type"].to_dict()
     codes = items.set_index("item_id")["item_code"].to_dict()
-    children = children_by_parent(tables["bom_headers"], tables["bom_components"])
+    children = children_by_parent(tables["bom_headers"], tables["bom_components"], current_as_of(tables["sales_orders"]))
     fg_ids = set(items.loc[items["item_type"] == "FG", "item_id"].astype(int))
 
     def descendants(item_id, seen=frozenset()):

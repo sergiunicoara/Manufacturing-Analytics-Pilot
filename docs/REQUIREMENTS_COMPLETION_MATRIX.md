@@ -93,4 +93,25 @@ Final strict run (`REQUIRE_DB_TESTS=1`, secured logins exported): 219 passed, 0 
 
 ## F. UI tests
 
-`frontend`: `npm test` runs 63 Vitest tests (`DashboardApp.test.tsx`, `ExecutiveStoryVisuals.test.tsx`) against a mocked API and mocked Plotly. They cover loading, API errors, stale responses, all twelve pages, the evidence drawer, chart click-through, the scenario lab, stage-record filters and paging, the copilot and the executive story. Deliberately breaking three behaviours (stale-response guard, pager step, drawer reset on navigation) made the matching tests fail. Not covered: real Plotly rendering, styling and a real browser.
+`frontend`: `npm test` runs 65 Vitest tests (`DashboardApp.test.tsx`, `ExecutiveStoryVisuals.test.tsx`) against a mocked API and mocked Plotly. They cover loading, API errors, stale responses, all twelve pages, the evidence drawer, chart click-through, the scenario lab, stage-record filters and paging, the copilot and the executive story. Deliberately breaking three behaviours (stale-response guard, pager step, drawer reset on navigation) made the matching tests fail. Not covered: real Plotly rendering, styling and a real browser.
+
+`npm run test:e2e` (Playwright, system Chrome, against the running stack; read-only) adds a 5-test browser smoke test: every page loads without console errors, a chart renders and a metric opens its evidence, the executive story, stage-record filtering, and the copilot. It found two real defects that are now fixed: a missing favicon (404 in every page load) and a sidebar that could not scroll, which hid the Executive Story link on screens shorter than about 780 px.
+
+## G. Second review round (2026-09-30) and its fixes
+
+| # | Finding | Fix | Verification |
+|---|---|---|---|
+| G1 | A receipt in a zero-demand week disappeared | Receipts for items not netted that week join the carried inventory | `test_review_fixes_2.py`; the five reference backlogs are unchanged (golden tests) |
+| G2 | Receipts after the horizon were credited to the final week | Receipts dated a week or more past the last period are dropped | Unit tests |
+| G3 | Missing capacity data gave an optimistic finite lead time | A centre with no usable capacity period makes the route unavailable (`None`) | Unit tests |
+| G4 | Capacity load ignored routing effective dates | `compute_required_hours_by_work_centre(..., period_start_date)` uses the revision effective that week | Unit test |
+| G5 | Policy mixed expired and current BOM revisions | Only the revision effective on the latest order date counts | Unit test |
+| G6 | A cyclic BOM got a confident policy | INSUFFICIENT_EVIDENCE with a cycle blocker | Unit tests |
+| G7 | Secured bootstrap could not run on a fresh instance | `security_setup` takes `MSSQL_ADMIN_USER/PASSWORD` explicitly; docs run it before switching the API to the secured profile | Unit test; docs rewritten |
+| G8 | A BLOCK completeness report exited 0; the destructive loader never checked | CLI exits 1 on BLOCK; the loader runs the check first and aborts before dropping anything (`--skip-completeness` to override) | Unit tests; synthetic data gives WARN, so the demo load is unaffected |
+| G9 | BI export could pair new data with an old sidecar | Both files are prepared as temporary files and swapped in only afterwards | Unit test. Only the two final renames remain as a window |
+| G10 | Executive Story crashed on a null lead time | Null shows "n/a" | UI test |
+| G11 | Stage-record filters could show stale rows after a failed reload | The table is cleared when the reload fails | UI test |
+| G12 | Rebuilding the film removed the burned-in captions | `finish_movie.py` burns the SRT into the canonical MP4s and keeps the selectable encodes; `build_film.py` writes `*_draft_*` files, never the canonical names | Burn-in command tested on a short clip; the full film was not rebuilt. The film stays uncommitted and outside the requirements |
+
+Full run after these fixes: backend 233 passed (strict, none skipped), UI 65, browser 5.

@@ -88,11 +88,29 @@ def _load_table(engine: sa.engine.Engine, metadata: sa.MetaData, table_name: str
     return len(records)
 
 
+def completeness_gate(staging_dir: str) -> None:
+    """Refuse to start the destructive reload when the staged data fails the data-request contract (BLOCK).
+    WARN results are printed and allowed. Runs before anything is dropped."""
+    from app.integration.completeness import BLOCK, PASS, load_contract, run_checks, tables_from_csv
+    contract = load_contract()
+    report = run_checks(tables_from_csv(staging_dir, contract), contract)
+    print(f"Completeness check: {report['overall']}  {report['counts']}")
+    for r in report["results"]:
+        if r["status"] != PASS:
+            print(f"  {r['status']:5s} {r['dataset']:28s} {r['check']:52s} {r['detail']}")
+    if report["overall"] == BLOCK:
+        raise SystemExit("Staged data fails the completeness contract (BLOCK); nothing was dropped or loaded. "
+                         "Fix the source files, or pass --skip-completeness to load anyway.")
+
+
 def load_all(staging_dir: str = "staging", ddl_path: str = "db/ddl/001_schema.sql",
-             migrations_dir: str | None = "db/migrations") -> dict:
+             migrations_dir: str | None = "db/migrations", check_completeness: bool = True) -> dict:
     """Destructive bootstrap: the DDL drops and recreates every table, then the versioned migrations
     (result tables, read models, roles, run data version) are re-applied so the schema is current
-    before the API starts. Pass migrations_dir=None only to inspect the bare DDL."""
+    before the API starts. Pass migrations_dir=None only to inspect the bare DDL. Staged data is checked against
+    the completeness contract first; a BLOCK aborts before anything is dropped."""
+    if check_completeness:
+        completeness_gate(staging_dir)
     wait_for_sql_server()
     run_ddl_file(ddl_path)
 
@@ -115,5 +133,6 @@ if __name__ == "__main__":
     parser.add_argument("--staging-dir", default="staging")
     parser.add_argument("--ddl", default="db/ddl/001_schema.sql")
     parser.add_argument("--migrations", default="db/migrations")
+    parser.add_argument("--skip-completeness", action="store_true", help="load even if the completeness check reports BLOCK")
     args = parser.parse_args()
-    load_all(args.staging_dir, args.ddl, args.migrations)
+    load_all(args.staging_dir, args.ddl, args.migrations, check_completeness=not args.skip_completeness)
